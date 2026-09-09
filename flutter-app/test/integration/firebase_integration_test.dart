@@ -29,7 +29,7 @@ void main() {
 
         expect(DefaultFirebaseOptions.web.projectId, 'english-5d522');
         expect(DefaultFirebaseOptions.isWebConfigured, !hasPlaceholder);
-        expect(DefaultFirebaseOptions.isConfigured, isFalse);
+        expect(DefaultFirebaseOptions.isConfigured, kIsWeb);
         expect(DefaultFirebaseOptions.isReady, isFalse);
       },
     );

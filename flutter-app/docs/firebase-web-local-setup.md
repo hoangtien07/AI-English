@@ -1,15 +1,16 @@
 # Firebase Web local setup
 
 Firebase is deliberately **Web-only** in this Flutter project. The repository
-ships placeholders and keeps Firebase inactive unless both the public Web SDK
-configuration and `FIREBASE_ENABLED=true` are present. No server credentials,
+keeps Firebase inactive unless both the complete public Web SDK configuration
+and `FIREBASE_ENABLED=true` are present. No server credentials,
 service accounts, or Google OAuth client secrets belong in this application.
 
-## Current handoff state
+## Current owned app
 
 The project is `english-5d522`. Firebase CLI discovery on 2026-09-09 found no
-authorized account in this environment, so no Firebase App was listed, created,
-or changed and no SDK configuration was fetched.
+Web apps, so this repository registered the sole owned Web app: **AI English
+Web** (`1:403021618812:web:4bd9f953967280ddc4b3f9`). Its public SDK
+configuration is installed in the Web-only Flutter and service-worker paths.
 
 ## One-time app registration
 
@@ -21,12 +22,12 @@ npm exec --yes --package=firebase-tools -- firebase login
 npm exec --yes --package=firebase-tools -- firebase apps:list WEB --project english-5d522
 ```
 
-If the list contains an appropriate LexiLingo Web app, use that app. If it does
+If the list contains the owned **AI English Web** app, use that app. If it does
 not, create exactly one app with this deterministic display name (do not create
 Android or iOS apps, and do not modify other apps):
 
 ```powershell
-npm exec --yes --package=firebase-tools -- firebase apps:create WEB "LexiLingo Web" --project english-5d522
+npm exec --yes --package=firebase-tools -- firebase apps:create WEB "AI English Web" --project english-5d522
 ```
 
 Fetch that app's public SDK object, replacing `<WEB_APP_ID>` with the returned
@@ -39,8 +40,8 @@ npm exec --yes --package=firebase-tools -- firebase apps:sdkconfig WEB <WEB_APP_
 Copy only the generated public `apiKey`, `appId`, `messagingSenderId`,
 `projectId`, `authDomain`, `storageBucket`, and optional `measurementId` into
 both `lib/firebase_options.dart` and `web/firebase-messaging-sw.js`. Replace
-the Web id in `firebase.json`, set `FIREBASE_ENABLED=true` in the appropriate
-bundled `assets/env/*_config` file, and set the service worker's local
+the Web id in `firebase.json`, set `FIREBASE_ENABLED=true` in both bundled
+`assets/env/*_config` files, and set the service worker's local
 `firebaseEnabled` constant to `true`; leave every non-Web Firebase setting
 absent. The Firebase Web config object is public client configuration; an OAuth
 client secret or service-account JSON must never be copied here.
@@ -53,8 +54,9 @@ must preserve the fail-closed guard in this repository.
 ## Required Firebase Console actions for local Google sign-in
 
 1. In **Firebase console → Authentication → Sign-in method**, enable the
-   Google provider and select the support email. Do not paste the Google OAuth
-   client secret into Flutter or any Flutter asset.
+   Google provider and select the support email. Leave the Facebook provider
+   disabled: this app hard-disables Facebook sign-in on Web. Do not paste the
+   Google OAuth client secret into Flutter or any Flutter asset.
 2. In **Authentication → Settings → Authorized domains**, add `localhost` and
    `127.0.0.1` for local development. These entries are hostnames, so they do
    not include a scheme or port. Firebase projects created after April 2025 do
@@ -88,12 +90,18 @@ Run the focused configuration test first:
 flutter test test/core/services/firebase_options_test.dart
 ```
 
-Before enabling Firebase, that test proves the placeholder configuration stays
-disabled. After replacing all generated Web values and enabling the public
-environment flag, run it again, then use `flutter run -d chrome --web-port
-5173` to verify initialization and Google popup/redirect sign-in. Finish with
-`flutter analyze` and `flutter build web`; neither command should cause a
-Firebase project mutation.
+The options test verifies the public identifiers, Facebook Web gate, and
+Web-only platform gate. Also run the bootstrap and service-worker consistency
+tests to prove a closed configuration gate and an initialization failure remain
+fail-closed:
+
+```powershell
+flutter test test/core/services/firebase_bootstrap_test.dart test/core/services/firebase_web_config_consistency_test.dart
+```
+
+Then use `flutter run -d chrome --web-port 5173` to verify initialization and
+Google popup/redirect sign-in. Finish with `flutter analyze` and `flutter build
+web`; neither command should cause a Firebase project mutation.
 
 References: [Firebase CLI app commands](https://firebase.google.com/docs/cli),
 [FlutterFire setup](https://firebase.google.com/docs/flutter/setup), and

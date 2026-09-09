@@ -22,16 +22,23 @@ void main() {
           );
 
       expect(DefaultFirebaseOptions.isWebConfigured, !hasPlaceholder);
-      expect(DefaultFirebaseOptions.isConfigured, isFalse);
+      expect(DefaultFirebaseOptions.isConfigured, kIsWeb);
       expect(DefaultFirebaseOptions.isReady, isFalse);
     },
   );
 
   test('Firebase client identifiers remain Web configuration fields', () {
+    expect(DefaultFirebaseOptions.web.projectId, 'english-5d522');
+    expect(
+      DefaultFirebaseOptions.web.appId,
+      '1:403021618812:web:4bd9f953967280ddc4b3f9',
+    );
     expect(DefaultFirebaseOptions.web.projectId, isNotEmpty);
     expect(DefaultFirebaseOptions.web.messagingSenderId, isNotEmpty);
     expect(DefaultFirebaseOptions.web.apiKey, isNotEmpty);
     expect(DefaultFirebaseOptions.web.appId, isNotEmpty);
+    expect(DefaultFirebaseOptions.web.measurementId, 'G-QQ057LF052');
+    expect(DefaultFirebaseOptions.isFacebookWebSignInEnabled, isFalse);
   });
 
   test('only exposes a Firebase platform option on Web', () {

@@ -13,6 +13,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:lexilingo_app/firebase_options.dart';
+import 'package:lexilingo_app/core/services/firebase_bootstrap.dart';
 import 'package:lexilingo_app/core/services/deep_link_service.dart';
 import 'package:lexilingo_app/core/services/purchases_service.dart';
 import 'package:lexilingo_app/core/services/firebase_messaging_service.dart';
@@ -125,28 +126,30 @@ void main() async {
   final firebaseEnabled =
       dotenv.maybeGet('FIREBASE_ENABLED')?.trim().toLowerCase() == 'true' &&
       DefaultFirebaseOptions.isConfigured;
-  if (firebaseEnabled) {
-    try {
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
-      debugPrint('Firebase initialized successfully');
+  final firebaseInitialized = await FirebaseBootstrap.initialize(
+    enabled: firebaseEnabled,
+    initializeApp: () =>
+        Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform),
+  );
+  if (firebaseInitialized) {
+    debugPrint('Firebase initialized successfully');
 
-      // Crashlytics: route Flutter framework errors to Crashlytics in release
-      if (!kIsWeb) {
-        FlutterError.onError = kReleaseMode
-            ? FirebaseCrashlytics.instance.recordFlutterFatalError
-            : FlutterError.presentError;
-        // Also catch async errors thrown outside the Flutter widget tree
-      }
-
-      // Initialize Firebase Cloud Messaging
-      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-      // Push notification permission should not block app startup
-      // so we delay it until after runApp()
-    } catch (e) {
-      debugPrint('Warning: Firebase initialization failed: $e');
+    // Crashlytics: route Flutter framework errors to Crashlytics in release
+    if (!kIsWeb) {
+      FlutterError.onError = kReleaseMode
+          ? FirebaseCrashlytics.instance.recordFlutterFatalError
+          : FlutterError.presentError;
+      // Also catch async errors thrown outside the Flutter widget tree
     }
+
+    // Initialize Firebase Cloud Messaging
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    // Push notification permission should not block app startup
+    // so we delay it until after runApp()
+  } else if (firebaseEnabled) {
+    debugPrint(
+      'Warning: Firebase initialization failed; keeping Firebase disabled',
+    );
   } else {
     debugPrint('Firebase disabled: owned app configuration is incomplete');
   }
@@ -185,7 +188,7 @@ void main() async {
 
   // Wrap runApp in runZonedGuarded so uncaught async errors are forwarded to
   // Crashlytics. In release mode only — dev keeps the default red-screen behavior.
-  if (!kIsWeb && kReleaseMode && firebaseEnabled) {
+  if (!kIsWeb && kReleaseMode && firebaseInitialized) {
     runZonedGuarded(
       () => runApp(
         EasyLocalization(
@@ -231,7 +234,7 @@ void main() async {
 
   // Initialize Firebase Messaging and Deep Links after UI starts rendering
   WidgetsBinding.instance.addPostFrameCallback((_) async {
-    if (firebaseEnabled) {
+    if (firebaseInitialized) {
       try {
         await FirebaseMessagingService.instance.initialize();
         debugPrint('Firebase Messaging initialized successfully');

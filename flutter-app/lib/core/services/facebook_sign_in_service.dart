@@ -1,7 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:lexilingo_app/firebase_options.dart';
 
 import '../utils/app_logger.dart';
@@ -46,39 +45,14 @@ class FacebookSignInService {
 
   /// Web: use Firebase Auth signInWithPopup
   Future<String?> _signInWeb() async {
-    final firebaseEnabled =
-        dotenv.maybeGet('FIREBASE_ENABLED')?.trim().toLowerCase() == 'true' &&
-        DefaultFirebaseOptions.isReady;
-    if (!firebaseEnabled) {
-      throw StateError(
-        'Facebook Sign-In is disabled until owned Firebase web configuration is complete.',
-      );
+    // The owned Firebase Web app intentionally enables Google only. Keeping
+    // this hard-disabled prevents an accidental Console provider toggle from
+    // exposing a second Web identity provider.
+    if (!DefaultFirebaseOptions.isFacebookWebSignInEnabled) {
+      throw UnsupportedError('Facebook Sign-In is disabled on Web.');
     }
 
-    final provider = FacebookAuthProvider()
-      ..addScope('email')
-      ..addScope('public_profile');
-
-    await FirebaseAuth.instance.signInWithPopup(provider);
-
-    // With Firebase Auth, get the Firebase ID Token to send to our backend
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      logError(_tag, 'Failed to get Firebase User after popup');
-      return null;
-    }
-
-    final idToken = await user.getIdToken();
-    if (idToken == null) {
-      logError(_tag, 'Failed to get Firebase ID token from User');
-      return null;
-    }
-
-    // Sign out from Firebase immediately since the app manages its own session to the backend
-    await FirebaseAuth.instance.signOut();
-
-    logInfo(_tag, 'Facebook Sign In successful (web)');
-    return idToken;
+    throw UnsupportedError('Facebook Sign-In Web support is unavailable.');
   }
 
   /// Mobile: use flutter_facebook_auth package to authenticate, then Firebase Auth to exchange.

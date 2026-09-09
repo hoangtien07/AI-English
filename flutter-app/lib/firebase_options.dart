@@ -1,23 +1,15 @@
-// File: firebase_options.dart.example
-// This is a template file. Copy to firebase_options.dart and replace with your Firebase config.
-//
-// To get your Firebase configuration:
-// 1. Go to Firebase Console: https://console.firebase.google.com/
-// 2. Select your project
-// 3. Go to Project Settings > General
-// 4. Scroll down to "Your apps" section
-// 5. Click on the Flutter app
-// 6. Copy the configuration values
-//
-// OR run: flutterfire configure
+// Firebase client identifiers are public configuration, not server secrets.
+// This project intentionally supports Firebase on Web only.
 
 import 'package:firebase_core/firebase_core.dart'
     show Firebase, FirebaseOptions;
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 class DefaultFirebaseOptions {
-  /// Firebase client identifiers are public configuration, not server secrets.
-  /// This project intentionally supports Firebase on Web only.
+  /// Facebook is intentionally unavailable on Web; Google is the sole owned
+  /// Firebase Web identity provider.
+  static const bool isFacebookWebSignInEnabled = false;
+
   static bool get isWebConfigured =>
       _isConfiguredValue(web.apiKey) &&
       _isConfiguredValue(web.appId) &&
@@ -44,12 +36,12 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'YOUR_WEB_API_KEY',
-    appId: 'YOUR_WEB_APP_ID',
+    apiKey: 'AIzaSyAjV0jileGzbPcHgKZDi4C94N9Ia7GTags',
+    appId: '1:403021618812:web:4bd9f953967280ddc4b3f9',
     messagingSenderId: '403021618812',
     projectId: 'english-5d522',
     authDomain: 'english-5d522.firebaseapp.com',
     storageBucket: 'english-5d522.firebasestorage.app',
-    measurementId: 'YOUR_MEASUREMENT_ID',
+    measurementId: 'G-QQ057LF052',
   );
 }
