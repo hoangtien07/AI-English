@@ -10,9 +10,7 @@ from __future__ import annotations
 
 import os
 import re
-import sys
 from pathlib import Path
-
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGETS = (
@@ -62,15 +60,90 @@ SECRET_PATTERNS = (
     re.compile(r"AKIA[0-9A-Z]{16}"),
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
 )
-PROVIDER_ASSIGNMENT = re.compile(
-    r"(?im)^[ \t]*(?:GEMINI|GROQ|OPENAI|HUGGINGFACE|SENTRY|REVENUECAT|KONG)"
-    r"[A-Z0-9_]*(?:API_KEYS?|KEY|TOKEN|SECRET|PASSWORD|DSN)"
-    r"[ \t]*[:=][ \t]*['\"]?([^\s'\"#]+)"
-)
-NESTED_PROVIDER_ASSIGNMENT = re.compile(
-    r"(?im)^[ \t]*api_key[ \t]*:[ \t]*['\"]?([^\s'\"#]+)"
+FIREBASE_WEB_CONFIGS = {
+    Path("flutter-app/lib/firebase_options.dart"): re.compile(
+        r"static const FirebaseOptions web = FirebaseOptions\((?P<body>.*?)\n\s*\);",
+        re.DOTALL,
+    ),
+    Path("flutter-app/web/firebase-messaging-sw.js"): re.compile(
+        r"const firebaseConfig = \{(?P<body>.*?)\n\};",
+        re.DOTALL,
+    ),
+}
+CREDENTIAL_ASSIGNMENT = re.compile(
+    r"(?im)^[ \t]*(?:export[ \t]+)?['\"]?(?P<key>[A-Za-z_][A-Za-z0-9_.-]*)['\"]?"
+    r"[ \t]*[:=][ \t]*(?:['\"])?(?P<value>[^\s'\"#,}]+)"
 )
 SAFE_ASSIGNMENT_PREFIXES = ("${", "${{", "replace", "your", "changeme")
+SAFE_REFERENCE_PREFIXES = ("$", "os.environ", "os.getenv", "getenv", "process.env")
+
+
+def _relative_path(path: Path) -> Path | None:
+    """Return a repository-relative path, or None for external test fixtures."""
+    try:
+        return path.resolve().relative_to(ROOT.resolve())
+    except ValueError:
+        return None
+
+
+def _is_allowed_firebase_web_api_key(path: Path, text: str, match: re.Match[str]) -> bool:
+    """Allow an AIza key only as the apiKey field of an owned Web config object."""
+    config_pattern = FIREBASE_WEB_CONFIGS.get(_relative_path(path))
+    if not config_pattern:
+        return False
+
+    for config_match in config_pattern.finditer(text):
+        body_start, body_end = config_match.span("body")
+        if not body_start <= match.start() < body_end:
+            continue
+        line_start = text.rfind("\n", body_start, match.start()) + 1
+        line_end = text.find("\n", match.end())
+        line_end = len(text) if line_end == -1 else line_end
+        line = text[line_start:line_end]
+        return bool(
+            re.fullmatch(
+                r"\s*apiKey\s*:\s*['\"]AIza[0-9A-Za-z_-]{20,}['\"]\s*,?\s*(?://.*)?",
+                line,
+            )
+        )
+    return False
+
+
+def _is_credential_key(key: str) -> bool:
+    normalized = key.lower().replace("-", "_").replace(".", "_")
+    return (
+        normalized
+        in {
+            "client_secret",
+            "clientsecret",
+            "private_key",
+            "privatekey",
+        }
+        or normalized.endswith(("_client_secret", "_private_key"))
+        or normalized in {"smtp_user", "smtp_username", "smtp_password", "smtp_pass"}
+    )
+
+
+def _is_provider_credential_key(key: str) -> bool:
+    normalized = key.lower().replace("-", "_").replace(".", "_")
+    provider_prefixes = (
+        "gemini_",
+        "groq_",
+        "openai_",
+        "huggingface_",
+        "sentry_",
+        "revenuecat_",
+        "kong_",
+    )
+    return normalized == "api_key" or (
+        normalized.startswith(provider_prefixes)
+        and normalized.endswith(("api_key", "api_keys", "key", "token", "secret", "password", "dsn"))
+    )
+
+
+def _is_safe_credential_value(value: str) -> bool:
+    normalized = value.lower()
+    return normalized.startswith(SAFE_ASSIGNMENT_PREFIXES + SAFE_REFERENCE_PREFIXES)
 
 
 def should_scan(path: Path) -> bool:
@@ -97,13 +170,25 @@ def violations_for(path: Path) -> list[str]:
         return []
 
     violations = ["legacy runtime marker" for marker in LEGACY_RUNTIME_MARKERS if marker in text]
-    violations.extend("credential literal" for pattern in SECRET_PATTERNS if pattern.search(text))
-    environment_like = path.suffix in {".env", ".yaml", ".yml", ".sh", ".bash"} or path.name.startswith(".env")
-    if environment_like:
-        for value in (*PROVIDER_ASSIGNMENT.findall(text), *NESTED_PROVIDER_ASSIGNMENT.findall(text)):
-            normalized = value.lower()
-            if normalized and not normalized.startswith(SAFE_ASSIGNMENT_PREFIXES):
-                violations.append("provider credential assignment")
+    for pattern in SECRET_PATTERNS:
+        for match in pattern.finditer(text):
+            if pattern.pattern.startswith("AIza") and _is_allowed_firebase_web_api_key(path, text, match):
+                continue
+            violations.append("credential literal")
+
+    environment_like = (
+        path.suffix in {".env", ".yaml", ".yml", ".sh", ".bash"}
+        or path.name.startswith(".env")
+    )
+    for match in CREDENTIAL_ASSIGNMENT.finditer(text):
+        key = match.group("key")
+        value = match.group("value")
+        if (
+            not (_is_credential_key(key) or environment_like and _is_provider_credential_key(key))
+            or _is_safe_credential_value(value)
+        ):
+            continue
+        violations.append("provider credential assignment")
     return violations
 
 

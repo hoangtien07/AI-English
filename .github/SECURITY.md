@@ -43,8 +43,9 @@ request, commit message, or documentation.
    - Create new API keys with proper restrictions:
      - Application restrictions: HTTP referrers (websites)
      - API restrictions: Limit to required APIs only
-   - Download new `google-services.json` and `GoogleService-Info.plist`
-   - Add to local project (never commit!)
+   - Keep mobile service-account material and OAuth client secrets out of the
+     repository. Firebase Web client identifiers are public browser
+     configuration and are handled under the narrow policy below.
 
 3. **Clean snapshot policy**:
    - Do not rewrite the independent `origin` history to remediate an upstream
@@ -59,7 +60,7 @@ request, commit message, or documentation.
 - ❌ Database passwords
 - ❌ OAuth tokens
 - ❌ Private keys
-- ❌ Firebase config files
+- ❌ Firebase Admin SDK service-account files and OAuth client secrets
 - ❌ `.env` files with real credentials
 
 ### Always Use:
@@ -77,10 +78,14 @@ request, commit message, or documentation.
 
 ### For Flutter/Firebase:
 ```dart
-// firebase_options.dart should be generated locally
-// Run: flutterfire configure
-// Add to .gitignore: **/firebase_options.dart
+// Firebase Web config is public browser configuration, not a server secret.
+// Only the owned Web fields in firebase_options.dart and firebase-messaging-sw.js
+// may be committed; the security sentinel rejects the same values elsewhere.
 ```
+
+Do not commit Firebase Admin SDK service-account JSON, OAuth client secrets, or
+unrestricted provider keys. Restrict the Firebase Web API key by authorized
+referrers and API permissions even though it is intentionally public.
 
 ## Security Checklist
 

@@ -41,11 +41,11 @@ from app.services.auth_service import (
 )
 from app.schemas.auth import (
     RegisterRequest, LoginRequest, LoginResponse, RefreshTokenRequest, TokenResponse,
-    ChangePasswordRequest, GoogleLoginRequest, FacebookLoginRequest, ForgotPasswordRequest,
+    ChangePasswordRequest, GoogleLoginRequest, ForgotPasswordRequest,
     ResetPasswordRequest, VerifyEmailRequest, VerifyEmailResponse, LogoutRequest
 )
 from app.schemas.user import UserResponse
-from app.schemas.common import MessageResponse, ErrorCodes, ErrorDetail, ErrorResponse
+from app.schemas.common import MessageResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -378,22 +378,18 @@ async def google_login(
                 detail="Admin Google OAuth not configured"
             )
     else:
-        # For Flutter app: mobile sends token with aud=GOOGLE_CLIENT_ID;
-        # Flutter web (Firebase Auth) sends token with aud=Firebase web client ID.
-        # We try strict audience first, then fall back to no-audience check.
-        audience = settings.GOOGLE_CLIENT_ID  # None is also accepted below
+        audience = settings.GOOGLE_CLIENT_ID
+        if not audience:
+            logger.error("Google OAuth is unavailable because GOOGLE_CLIENT_ID is not configured")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Google OAuth not configured",
+            )
     
     # Verify Google token with the correct audience
     logger.info(f"Google login attempt: source={request.source}, audience={audience}")
 
     google_info = await verify_google_token(request.id_token, audience=audience)
-
-    # Only skip audience check when GOOGLE_CLIENT_ID is not configured.
-    # If it IS configured and verification fails, the token belongs to a different
-    # app/project — do NOT retry unchecked (would accept tokens from any Google app).
-    if not google_info and request.source != "admin" and not audience:
-        logger.info("Retrying token verification without audience restriction (GOOGLE_CLIENT_ID not configured)")
-        google_info = await verify_google_token(request.id_token, audience=None)
 
     # Flutter web can return a Firebase ID token instead of Google OAuth id_token.
     # Admin login must use the configured admin OAuth audience; a Firebase token
@@ -542,89 +538,12 @@ async def google_login(
     )
 
 
-@router.post("/facebook", response_model=LoginResponse)
-async def facebook_login(
-    request: FacebookLoginRequest,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Login or register with Facebook via Firebase authentication.
-    
-    - Verifies Firebase ID token securely using Firebase Admin SDK
-    - Uses same account linking / admin rules logic as Google
-    - Returns JWT tokens
-    """
-    from app.core.firebase_auth import verify_firebase_token, get_or_create_user_from_claims
-    from app.core.config import settings
-
-    logger.info(f"Facebook (Firebase) login attempt: source={request.source}")
-
-    # Verify Firebase ID token
-    claims = await anyio.to_thread.run_sync(verify_firebase_token, request.id_token)
-    if not claims:
-        logger.error(f"Firebase token verification failed for Facebook login (source={request.source})")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid Firebase ID token"
-        )
-
-    # Some basic checks before we accept the token:
-    if "firebase" not in claims or claims["firebase"].get("sign_in_provider") != "facebook.com":
-        logger.warning("Token provided to /facebook is not a facebook.com login token.")
-        # We might still accept it if we want generic /firebase endpoint, 
-        # but let's restrict to facebook for exactness.
-        pass # Optional to raise error here, we let get_or_create handle the user.
-
-    email = claims.get("email")
-    if not email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email not provided by Facebook/Firebase account."
-        )
-
-    try:
-        user = await get_or_create_user_from_claims(db, claims)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc)
-        )
-
-    # For admin source verify the role (as done in Google logic)
-    if request.source == "admin":
-        await db.refresh(user, ["role"])
-        user_role = user.role.slug if user.role else None
-        if user_role not in ["admin", "super_admin"]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied. Admin privileges required."
-            )
-
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User account is inactive"
-        )
-    
-    # Update last login
-    user.last_login = datetime.now(timezone.utc)
-    await db.commit()
-    
-    # Create tokens
-    access_token = create_access_token({"sub": str(user.id)})
-    refresh_token = create_refresh_token({"sub": str(user.id)})
-    
-    # Save refresh token for revocation support
-    await save_refresh_token(db,user.id, refresh_token)
-    
-    return LoginResponse(
-        access_token=access_token,
-        refresh_token=refresh_token,
-        token_type="bearer",
-        user_id=str(user.id),
-        username=user.username,
-        email=user.email,
-        role=user.role_slug if hasattr(user, 'role_slug') else "user",
+@router.post("/facebook", include_in_schema=False)
+async def facebook_login_disabled():
+    """Reject an unapproved identity provider before processing any token."""
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Facebook authentication is disabled.",
     )
 
 

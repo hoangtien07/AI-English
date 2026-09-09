@@ -210,8 +210,8 @@ class Settings(BaseSettings):
         if not (self.GOOGLE_CLIENT_ID or "").strip():
             raise ValueError(
                 "GOOGLE_CLIENT_ID must be set when APP_ENV=production — without it, "
-                "Google login falls back to verifying tokens with no audience "
-                "restriction, accepting a token issued for any Google app."
+                "Google login fails closed rather than accepting a token without a "
+                "configured audience."
             )
         if not (self.GOOGLE_ADMIN_CLIENT_ID or "").strip():
             raise ValueError(

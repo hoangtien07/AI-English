@@ -11,7 +11,7 @@ Covers:
 - POST /auth/reset-password  — valid token, invalid token, weak password
 - POST /auth/verify-email    — valid token, invalid token, already verified
 - POST /auth/google          — invalid token, new user, link to unverified local account, blocked link
-- POST /auth/facebook        — invalid token, success, inactive
+- POST /auth/facebook        — disabled server-side
 - POST /auth/admin/login     — success, wrong role, unverified, inactive
 - POST /auth/admin/request-otp, /auth/admin/verify-otp — anti-enumeration, unverified blocked, success
 - POST /auth/change-password — success, wrong current password, OAuth-only blocked
@@ -869,6 +869,10 @@ class TestVerifyEmail:
 
 class TestGoogleLogin:
 
+    @pytest.fixture(autouse=True)
+    def configured_google_client_id(self, monkeypatch):
+        monkeypatch.setattr("app.routes.auth.settings.GOOGLE_CLIENT_ID", "google-client-id")
+
     async def test_google_login_invalid_token_returns_401(self, client):
         """An unverifiable Google ID token returns 401."""
         event_loop_thread = threading.get_ident()
@@ -887,6 +891,24 @@ class TestGoogleLogin:
                 json={"id_token": "bad-token", "source": "app"},
             )
         assert response.status_code == 401
+
+    async def test_google_login_missing_client_id_fails_closed(self, client, monkeypatch):
+        monkeypatch.setattr("app.routes.auth.settings.GOOGLE_CLIENT_ID", None)
+        verify_google = AsyncMock()
+        verify_firebase = MagicMock()
+
+        with patch("app.core.security.verify_google_token", new=verify_google), patch(
+            "app.core.firebase_auth.verify_firebase_token", verify_firebase
+        ):
+            response = await client.post(
+                f"{BASE}/google",
+                json={"id_token": "untrusted-token", "source": "app"},
+            )
+
+        assert response.status_code == 503
+        assert "not configured" in response.json()["error"]["message"].lower()
+        verify_google.assert_not_awaited()
+        verify_firebase.assert_not_called()
 
     async def test_google_login_new_user_created_returns_200(self):
         """A first-time Google sign-in (email_verified=True) creates a new user."""
@@ -1073,57 +1095,17 @@ class TestGoogleLogin:
 
 class TestFacebookLogin:
 
-    async def test_facebook_login_invalid_token_returns_401(self, client):
-        """An unverifiable Firebase ID token returns 401."""
-        event_loop_thread = threading.get_ident()
-
-        def verify_firebase_in_worker(_token):
-            assert threading.get_ident() != event_loop_thread
-            return None
-
-        with patch(
-            "app.core.firebase_auth.verify_firebase_token",
-            side_effect=verify_firebase_in_worker,
-        ):
+    async def test_facebook_login_is_disabled_before_token_processing(self, client):
+        verify_firebase = MagicMock()
+        with patch("app.core.firebase_auth.verify_firebase_token", verify_firebase):
             response = await client.post(
                 f"{BASE}/facebook",
-                json={"id_token": "bad-token", "source": "app"},
+                json={"id_token": "any-token", "source": "app"},
             )
-        assert response.status_code == 401
 
-    async def test_facebook_login_success_returns_200(self, client):
-        """A valid Facebook (Firebase) token returns tokens for an active user."""
-        fb_user = _make_mock_user(is_active=True)
-        claims = {
-            "email": fb_user.email,
-            "email_verified": True,
-            "firebase": {"sign_in_provider": "facebook.com"},
-        }
-        with patch("app.core.firebase_auth.verify_firebase_token", return_value=claims), \
-             patch("app.core.firebase_auth.get_or_create_user_from_claims", new=AsyncMock(return_value=fb_user)):
-            response = await client.post(
-                f"{BASE}/facebook",
-                json={"id_token": "good-token", "source": "app"},
-            )
-        assert response.status_code == 200
-        data = response.json()
-        assert "access_token" in data
-
-    async def test_facebook_login_inactive_user_returns_403(self, client):
-        """An inactive account cannot complete Facebook login."""
-        fb_user = _make_mock_user(is_active=False)
-        claims = {
-            "email": fb_user.email,
-            "email_verified": True,
-            "firebase": {"sign_in_provider": "facebook.com"},
-        }
-        with patch("app.core.firebase_auth.verify_firebase_token", return_value=claims), \
-             patch("app.core.firebase_auth.get_or_create_user_from_claims", new=AsyncMock(return_value=fb_user)):
-            response = await client.post(
-                f"{BASE}/facebook",
-                json={"id_token": "good-token", "source": "app"},
-            )
-        assert response.status_code == 403
+        assert response.status_code == 410
+        assert "disabled" in response.json()["error"]["message"].lower()
+        verify_firebase.assert_not_called()
 
 
 # ===========================================================================
