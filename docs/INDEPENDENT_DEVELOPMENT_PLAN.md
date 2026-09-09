@@ -93,7 +93,9 @@ upstream DISABLED (push)
 branch   tienph
 ```
 
-The owned repository currently exists but has no remote refs. No first push has been performed by this plan.
+The owned repository is the only approved push target. First-push authorization
+and gate evidence are tracked in Section 15; staging, production, and hosting
+remain deferred.
 
 ### 4.2 Original live endpoints
 
@@ -248,7 +250,7 @@ or fail.
 | Admin authorization | The owner approved one exact super-admin email and the normalized allowlist tests passed. | Keep privileges exact-address only; never grant a whole domain. |
 | External content | The owner states they have permission to copy and reuse the official-site content for the demo. | Acquisition/import remains unimplemented and must retain provenance; later course content will be teacher-authored independently. |
 | Repository history | Independent clean snapshot is the approved replacement for a history rewrite. | Preserve the orphan `origin` history; use the local/private upstream bridge only for reviewed imports. |
-| Delivery scope | Rebrand, staging, production, hosting, and mobile remain deferred. | No commit, push, deploy, account provisioning, purchase, or hosted/mobile parity claim was made. |
+| Delivery scope | Rebrand, staging, production, hosting, and mobile remain deferred. | The independent clean snapshot and local integration commits are in scope; no deploy, purchase, or hosted/mobile parity claim is made. |
 
 ### 7.3 Task ledger
 
@@ -259,12 +261,12 @@ or fail.
 | L0-01 | DONE | `git remote -v` shows `origin` at the owned repository. |
 | L0-02 | DONE | `git remote -v` and configured push URL show upstream push is `DISABLED`. |
 | L0-03 | DONE | Independent clean snapshot root commit `ba243ba3881321efcbea0e68f8466ad072ac0843` replaces reachable-history remediation. Current-tree sentinel and `git diff --check` remain required for imports. |
-| L0-04 | DONE | Security review classified the current deploy inputs, Firebase/admin/SMTP boundaries, and remaining history risk; current-tree sentinel checks pass. |
-| L0-05 | DONE | Final backend, AI, admin, Flutter, data-manifest, and developer-experience gates are recorded in the validation report. |
-| L0-06 | DONE | The owner explicitly authorized the first push on 2026-09-09; push remains conditional on the final current-tree security/test gate. |
+| L0-04 | DONE | Independent security re-review approved the current tree for `origin` only: the narrow Firebase Web public-config rule, Google fail-closed behavior, Facebook disablement, tracked-secret checks, and disabled upstream push all passed. |
+| L0-05 | DONE | Final integration evidence includes sentinel 15/15, backend auth/config/email 92/92, Flutter Firebase 10/10, Flutter Web build, Compose static config, plan 52/52, and clean diff/worktree checks. Flutter analysis has 13 recorded non-fatal baseline warnings. |
+| L0-06 | DONE | The owner explicitly authorized the first push on 2026-09-09; the final current-tree security and integration gates passed. Push execution is tracked in Section 15. |
 
-`GATE-OWNERSHIP` now requires only the final current-tree security/test evidence;
-owner approval for the first push is recorded. No push has occurred yet.
+`GATE-OWNERSHIP` passed: repository ownership, explicit owner authorization,
+current-tree security review, and integration evidence are all recorded.
 
 #### LOCAL-1 - configuration isolation
 
@@ -644,10 +646,28 @@ At the beginning of every continuation:
   authorization. Firebase Console Google-provider/domain validation and actual
   transactional-email delivery remain separate acceptance checks.
 
+### 2026-09-09 — final pre-push security and integration gate
+
+- Reconciled the Firebase Web public-client configuration with the secret
+  sentinel using a narrow path/object/field allowlist; private OAuth,
+  service-account, SMTP, provider-key, and private-key patterns remain blocked.
+- Made learner Google authentication fail closed before token verification when
+  its client ID is absent, and disabled Facebook authentication server-side
+  before token or database processing. Added negative regression coverage for
+  both learner and admin client-ID boundaries.
+- Independent security re-review approved push to `origin` only. Final local
+  checks passed: sentinel tests 15/15, repository sentinel, backend focused
+  auth/config/email 92/92, Flutter Firebase 10/10, Flutter analysis with 13
+  known non-fatal warnings, Flutter Web build, Compose development static
+  configuration, plan 52/52, `git diff --check`, and a clean worktree.
+- Full-module Ruff findings are pre-existing baseline debt; scoped checks found
+  no new lint violation from the security fix or added regression test.
+
 ### Next executable work
 
-1. Run the final current-tree security/test gate, then push only the independent
-   branch to `origin`; do not rewrite history or push upstream refs.
+1. Push only the gated independent branch to `origin`; do not rewrite history,
+   merge unrelated histories, or push upstream refs. Record remote verification
+   in this plan immediately after the first push.
 2. Resolve `L4-03` and `L4-06`: complete Firebase Console Google-provider and
    authorized-domain setup, run a browser Google sign-in smoke, and verify one
    real transactional-email journey without recording credentials or tokens.
