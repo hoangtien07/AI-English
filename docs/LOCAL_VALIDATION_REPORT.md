@@ -2,14 +2,16 @@
 
 ## Scope and result
 
-This report reconciles final local evidence collected on 2026-09-08. It
-contains no credentials, environment values, container IDs, or remote
-endpoints. No commit, push, deployment, account provisioning, scraping, or
-destructive Git-history rewrite was performed.
+This report reconciles local evidence collected on 2026-09-08. It contains no
+credentials, environment values, container IDs, or private remote endpoints.
+At the time of this evidence run, no commit, push, deployment, account
+provisioning, scraping, or destructive Git-history rewrite was performed. The
+later clean-snapshot first push is recorded in
+`docs/INDEPENDENT_DEVELOPMENT_PLAN.md`.
 
 | Area | Final result | Scope boundary |
 |---|---|---|
-| Independence | Sentinel passed; `git diff --check` passed. | Current deployable tree only; Git-history remediation/audit remains required before first push. |
+| Independence | Sentinel passed; `git diff --check` passed. | Current deployable tree only; the later orphan clean snapshot superseded history rewrite and is governed by the upstream-sync policy. |
 | Compose | Configuration validation passed. | Configuration rendering, not a hosted deployment. |
 | Backend | Focused: 17 passed; full isolated suite: 1679 passed, 3 skipped; Ruff passed. | Runner created/removed only a UUID-named `*_test` DB. API/service proof is not Flutter UI proof. |
 | AI/STT | Clean image rebuilt; Moonshine wheel checksum OK; container healthy; 138 STT worker + 15 gate tests passed. | Real fixture returned non-empty output; about 1.4 s load, 1.2 s transcription, and 51,441,771-byte cache are observations, not a capacity benchmark. |

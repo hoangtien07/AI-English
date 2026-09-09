@@ -87,10 +87,10 @@ Before any automated collection:
 ### 4.1 Repository ownership
 
 ```text
-origin   https://github.com/hoangtien07/AI-English.git (fetch/push)
-upstream https://github.com/InfinityZero3000/LexiLingo.git (fetch)
-upstream DISABLED (push)
-branch   tienph
+origin             https://github.com/hoangtien07/AI-English.git (fetch/push)
+upstream           https://github.com/InfinityZero3000/LexiLingo.git (fetch)
+upstream           DISABLED (push)
+integration branch hoangtien07/lexilingo-clean-v1 -> origin/main
 ```
 
 The owned repository is the only approved push target. First-push authorization
@@ -662,12 +662,16 @@ At the beginning of every continuation:
   configuration, plan 52/52, `git diff --check`, and a clean worktree.
 - Full-module Ruff findings are pre-existing baseline debt; scoped checks found
   no new lint violation from the security fix or added regression test.
+- Created `origin/main` from the gated clean snapshot at `22395082` and verified
+  the remote ref matched the local integration HEAD. The unrelated legacy local
+  `main` branch was preserved and was not rewritten or renamed.
 
 ### Next executable work
 
-1. Push only the gated independent branch to `origin`; do not rewrite history,
-   merge unrelated histories, or push upstream refs. Record remote verification
-   in this plan immediately after the first push.
+1. For future upstream updates, follow `docs/UPSTREAM_SYNC_POLICY.md`: fetch for
+   inspection, import only reviewed commits/patches with provenance, rerun all
+   gates, and push only to `origin`; never merge unrelated histories or push
+   upstream refs.
 2. Resolve `L4-03` and `L4-06`: complete Firebase Console Google-provider and
    authorized-domain setup, run a browser Google sign-in smoke, and verify one
    real transactional-email journey without recording credentials or tokens.
