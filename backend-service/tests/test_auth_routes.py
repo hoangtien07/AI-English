@@ -910,6 +910,41 @@ class TestGoogleLogin:
         verify_google.assert_not_awaited()
         verify_firebase.assert_not_called()
 
+    async def test_google_admin_login_missing_client_id_fails_before_verification_or_db_processing(
+        self, monkeypatch
+    ):
+        """Admin OAuth fails closed before any token verification or database query."""
+        from app.core.database import get_db
+        from app.main import app
+
+        session = _make_mock_session()
+        session.execute = AsyncMock()
+
+        async def mock_get_db():
+            yield session
+
+        app.dependency_overrides[get_db] = mock_get_db
+        transport = ASGITransport(app=app)
+        monkeypatch.setattr("app.routes.auth.settings.GOOGLE_ADMIN_CLIENT_ID", None)
+        verify_google = AsyncMock()
+        verify_firebase = MagicMock()
+
+        with patch("app.core.security.verify_google_token", new=verify_google), patch(
+            "app.core.firebase_auth.verify_firebase_token", verify_firebase
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as c:
+                response = await c.post(
+                    f"{BASE}/google",
+                    json={"id_token": "untrusted-token", "source": "admin"},
+                )
+        app.dependency_overrides.clear()
+
+        assert response.status_code == 500
+        assert "admin google oauth not configured" in response.json()["error"]["message"].lower()
+        verify_google.assert_not_awaited()
+        verify_firebase.assert_not_called()
+        session.execute.assert_not_awaited()
+
     async def test_google_login_new_user_created_returns_200(self):
         """A first-time Google sign-in (email_verified=True) creates a new user."""
         from app.main import app
