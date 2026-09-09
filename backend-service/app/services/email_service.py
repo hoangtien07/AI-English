@@ -1,0 +1,274 @@
+"""Email service for transactional emails (password reset, etc.)."""
+
+from __future__ import annotations
+
+import html
+import logging
+import smtplib
+import ssl
+from email.message import EmailMessage
+from pathlib import Path
+from urllib.parse import quote
+
+from fastapi.concurrency import run_in_threadpool
+
+from app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+_TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "templates"
+
+
+class EmailService:
+    """SMTP-based email sender with lightweight HTML template rendering."""
+
+    @staticmethod
+    def _log_unsent_link(kind: str, to_email: str, url: str) -> None:
+        if settings.is_development:
+            logger.warning(
+                "SMTP_HOST not configured. %s email was not sent. "
+                "Generated local URL for %s: %s",
+                kind,
+                to_email,
+                url,
+            )
+            return
+
+        logger.error(
+            "SMTP_HOST not configured. %s email was not sent to %s; "
+            "tokenized URL suppressed outside development.",
+            kind,
+            to_email,
+        )
+
+    @staticmethod
+    def _render_template(template_name: str, context: dict[str, str]) -> str:
+        template_path = _TEMPLATE_DIR / template_name
+        if not template_path.exists():
+            raise FileNotFoundError(f"Email template not found: {template_path}")
+        content = template_path.read_text(encoding="utf-8")
+        return content.format(**context)
+
+    @staticmethod
+    def _send_message_blocking(message: EmailMessage) -> None:
+        smtp_host = settings.SMTP_HOST
+        if not smtp_host:
+            raise ValueError("SMTP_HOST is not configured")
+        if not settings.SMTP_USERNAME or not settings.SMTP_PASSWORD:
+            raise ValueError("SMTP_USERNAME and SMTP_PASSWORD are required")
+
+        timeout = settings.SMTP_TIMEOUT
+        tls_context = ssl.create_default_context()
+
+        if settings.SMTP_USE_SSL:
+            with smtplib.SMTP_SSL(
+                smtp_host,
+                settings.SMTP_PORT,
+                timeout=timeout,
+                context=tls_context,
+            ) as server:
+                server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+                server.send_message(message)
+            return
+
+        with smtplib.SMTP(smtp_host, settings.SMTP_PORT, timeout=timeout) as server:
+            server.ehlo()
+            if settings.SMTP_USE_TLS:
+                if not server.has_extn("starttls"):
+                    raise smtplib.SMTPNotSupportedError("SMTP server does not support STARTTLS")
+                server.starttls(context=tls_context)
+                server.ehlo()
+            server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+            server.send_message(message)
+
+    @classmethod
+    async def send_password_reset_email(
+        cls,
+        *,
+        to_email: str,
+        reset_token: str,
+        display_name: str | None,
+    ) -> bool:
+        """Send password-reset email with a tokenized reset URL.
+
+        Returns True when sent successfully. If SMTP is not configured, returns
+        False after logging a warning and the generated reset URL for local dev.
+        """
+        encoded_token = quote(reset_token, safe="")
+        reset_link = f"{settings.effective_password_reset_url_base}?token={encoded_token}"
+
+        if not settings.SMTP_HOST:
+            cls._log_unsent_link("Password reset", to_email, reset_link)
+            return False
+
+        html_context = {
+            "display_name": html.escape(display_name or "Learner"),
+            "reset_link": html.escape(reset_link),
+            "expiry_minutes": "60",
+            "support_email": html.escape(settings.EMAIL_FROM),
+        }
+        text_context = {
+            "display_name": display_name or "Learner",
+            "reset_link": reset_link,
+            "expiry_minutes": "60",
+            "support_email": settings.EMAIL_FROM,
+        }
+
+        html_body = cls._render_template("password_reset_email.html", html_context)
+        text_body = cls._render_template("password_reset_email.txt", text_context)
+
+        message = EmailMessage()
+        message["Subject"] = "LexiLingo - Reset your password"
+        message["From"] = settings.EMAIL_FROM
+        message["To"] = to_email
+        message.set_content(text_body)
+        message.add_alternative(html_body, subtype="html")
+
+        try:
+            await run_in_threadpool(cls._send_message_blocking, message)
+            logger.info("Password reset email sent to %s", to_email)
+            return True
+        except Exception as exc:  # pragma: no cover - external IO
+            logger.exception("Failed to send password reset email to %s: %s", to_email, exc)
+            return False
+
+    @classmethod
+    async def send_verification_email(
+        cls,
+        to_email: str,
+        token: str,
+        display_name: str | None = None,
+    ) -> bool:
+        """Send email verification link to a newly registered user.
+
+        Returns True when sent successfully. If SMTP is not configured, returns
+        False after logging a warning and the generated verification URL for local dev.
+        """
+        from urllib.parse import quote
+        encoded_token = quote(token, safe="")
+        verify_link = f"{settings.effective_email_verification_url_base}?token={encoded_token}"
+        if not settings.SMTP_HOST:
+            cls._log_unsent_link("Verification", to_email, verify_link)
+            return False
+
+        html_context = {
+            "display_name": html.escape(display_name or "Learner"),
+            "verify_link": html.escape(verify_link),
+            "expiry_hours": "24",
+            "support_email": html.escape(settings.EMAIL_FROM),
+        }
+        text_context = {
+            "display_name": display_name or "Learner",
+            "verify_link": verify_link,
+            "expiry_hours": "24",
+            "support_email": settings.EMAIL_FROM,
+        }
+
+        html_body = cls._render_template("verification_email.html", html_context)
+        text_body = cls._render_template("verification_email.txt", text_context)
+
+        message = EmailMessage()
+        message["Subject"] = "LexiLingo - Verify your email address"
+        message["From"] = settings.EMAIL_FROM
+        message["To"] = to_email
+        message.set_content(text_body)
+        message.add_alternative(html_body, subtype="html")
+
+        try:
+            await run_in_threadpool(cls._send_message_blocking, message)
+            logger.info("Verification email sent to %s", to_email)
+            return True
+        except Exception as exc:  # pragma: no cover - external IO
+            logger.exception("Failed to send verification email to %s: %s", to_email, exc)
+            return False
+
+    @classmethod
+    async def send_vocabulary_review_reminder_email(
+        cls,
+        *,
+        to_email: str,
+        display_name: str | None,
+        due_count: int,
+    ) -> bool:
+        """Send an occasional vocabulary review reminder email."""
+        review_link = f"{settings.APP_PUBLIC_URL.rstrip('/')}{settings.REMINDER_REVIEW_ROUTE}"
+        settings_link = f"{settings.APP_PUBLIC_URL.rstrip('/')}/settings"
+
+        if not settings.SMTP_HOST:
+            logger.warning(
+                "SMTP_HOST not configured. Vocabulary review reminder email was not sent. "
+                "Generated review URL for %s: %s",
+                to_email,
+                review_link,
+            )
+            return False
+
+        html_context = {
+            "display_name": html.escape(display_name or "Learner"),
+            "due_count": str(max(0, due_count)),
+            "review_link": html.escape(review_link),
+            "settings_link": html.escape(settings_link),
+            "support_email": html.escape(settings.EMAIL_FROM),
+        }
+        text_context = {
+            "display_name": display_name or "Learner",
+            "due_count": str(max(0, due_count)),
+            "review_link": review_link,
+            "settings_link": settings_link,
+            "support_email": settings.EMAIL_FROM,
+        }
+
+        html_body = cls._render_template("vocabulary_review_reminder.html", html_context)
+        text_body = cls._render_template("vocabulary_review_reminder.txt", text_context)
+
+        message = EmailMessage()
+        message["Subject"] = "LexiLingo - Time to review your vocabulary"
+        message["From"] = settings.EMAIL_FROM
+        message["To"] = to_email
+        message.set_content(text_body)
+        message.add_alternative(html_body, subtype="html")
+
+        try:
+            await run_in_threadpool(cls._send_message_blocking, message)
+            logger.info("Vocabulary review reminder email sent to %s", to_email)
+            return True
+        except Exception as exc:  # pragma: no cover - external IO
+            logger.exception(
+                "Failed to send vocabulary review reminder email to %s: %s",
+                to_email,
+                exc,
+            )
+            return False
+
+    @staticmethod
+    def _build_otp_message(to_email: str, otp: str, display_name: str) -> EmailMessage:
+        """Build an EmailMessage containing an admin login OTP."""
+        from email.message import EmailMessage as _EM
+        msg = _EM()
+        msg["Subject"] = "LexiLingo Admin — Your login code"
+        msg["From"] = settings.EMAIL_FROM or "noreply@localhost"
+        msg["To"] = to_email
+        text = (
+            f"Hi {display_name},\n\n"
+            f"Your LexiLingo Admin one-time passcode is:\n\n"
+            f"  {otp}\n\n"
+            f"This code expires in 5 minutes. Do not share it.\n\n"
+            f"If you didn't request this, ignore this email.\n\n"
+            f"— LexiLingo Team"
+        )
+        safe_display_name = html.escape(display_name)
+        html_body = f"""
+<html><body style="font-family:sans-serif;background:#f8f9ff;padding:32px">
+  <div style="max-width:480px;margin:auto;background:#fff;border-radius:16px;padding:32px">
+    <h2 style="color:#AD3200;margin:0 0 8px">LingoAdmin Login</h2>
+    <p>Hi <strong>{safe_display_name}</strong>,</p>
+    <p>Your one-time passcode is:</p>
+    <div style="background:#FFF3EE;border-radius:12px;padding:24px;text-align:center;margin:24px 0">
+      <span style="font-size:36px;font-weight:700;letter-spacing:8px;color:#AD3200">{otp}</span>
+    </div>
+    <p style="color:#666;font-size:13px">Expires in <strong>5 minutes</strong>. Do not share this code.</p>
+  </div>
+</body></html>"""
+        msg.set_content(text)
+        msg.add_alternative(html_body, subtype="html")
+        return msg

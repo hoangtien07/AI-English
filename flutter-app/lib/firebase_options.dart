@@ -1,0 +1,55 @@
+// File: firebase_options.dart.example
+// This is a template file. Copy to firebase_options.dart and replace with your Firebase config.
+//
+// To get your Firebase configuration:
+// 1. Go to Firebase Console: https://console.firebase.google.com/
+// 2. Select your project
+// 3. Go to Project Settings > General
+// 4. Scroll down to "Your apps" section
+// 5. Click on the Flutter app
+// 6. Copy the configuration values
+//
+// OR run: flutterfire configure
+
+import 'package:firebase_core/firebase_core.dart'
+    show Firebase, FirebaseOptions;
+import 'package:flutter/foundation.dart' show kIsWeb;
+
+class DefaultFirebaseOptions {
+  /// Firebase client identifiers are public configuration, not server secrets.
+  /// This project intentionally supports Firebase on Web only.
+  static bool get isWebConfigured =>
+      _isConfiguredValue(web.apiKey) &&
+      _isConfiguredValue(web.appId) &&
+      _isConfiguredValue(web.messagingSenderId) &&
+      _isConfiguredValue(web.projectId) &&
+      _isConfiguredValue(web.authDomain);
+
+  /// True only when the running platform is Web and its public config is whole.
+  static bool get isConfigured => kIsWeb && isWebConfigured;
+
+  /// True only after the configured Firebase app has initialized successfully.
+  static bool get isReady => isConfigured && Firebase.apps.isNotEmpty;
+
+  static bool _isConfiguredValue(String? value) =>
+      value != null && value.trim().isNotEmpty && !value.startsWith('YOUR_');
+
+  static FirebaseOptions get currentPlatform {
+    if (kIsWeb) {
+      return web;
+    }
+    throw UnsupportedError(
+      'Firebase is configured for Web only. Do not enable it on this platform.',
+    );
+  }
+
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'YOUR_WEB_API_KEY',
+    appId: 'YOUR_WEB_APP_ID',
+    messagingSenderId: '403021618812',
+    projectId: 'english-5d522',
+    authDomain: 'english-5d522.firebaseapp.com',
+    storageBucket: 'english-5d522.firebasestorage.app',
+    measurementId: 'YOUR_MEASUREMENT_ID',
+  );
+}

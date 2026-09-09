@@ -1,0 +1,521 @@
+"""
+Ollama Qwen Handler - Chat and Grammar Analysis via Ollama
+
+Uses local Ollama server with qwen3-lexi model for:
+- Chat/conversation
+- Grammar analysis
+- Fluency scoring
+- Text completion
+
+NO HuggingFace dependency - pure Ollama API.
+"""
+
+import logging
+import json
+import os
+import httpx
+from api.core.config import get_settings
+from api.services.trace_cag.llm_client import _qwen_reasoning_overrides
+from typing import Optional, Dict, Any, List
+from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class OllamaQwenConfig:
+    """Configuration for Ollama Qwen model."""
+    base_url: str = "http://localhost:11434"
+    model: str = "lexilingo-qwen3-1.7b"  # Model name in Ollama
+    timeout: float = 120.0
+    temperature: float = 0.7
+    top_p: float = 0.9
+    context_length: int = 2048
+    num_threads: int = 8
+    keep_alive: str = "24h"
+
+
+class OllamaQwenHandler:
+    """
+    Handler for Qwen model via Ollama API.
+    
+    Uses local Ollama server - no model loading required.
+    Models are managed by Ollama, providing:
+    - Fast inference with pre-loaded models
+    - Memory management by Ollama
+    - Easy model switching
+    """
+    
+    def __init__(self, config: Optional[OllamaQwenConfig] = None):
+        self.config = config or OllamaQwenConfig()
+        self.client: Optional[httpx.AsyncClient] = None
+        self._loaded = False
+        self._ollama_offline = False  # Track if Ollama is permanently/currently offline
+        
+    @property
+    def is_loaded(self) -> bool:
+        return self._loaded
+    
+    @property
+    def memory_usage_mb(self) -> float:
+        """Memory is managed by Ollama, not by us."""
+        return 0.0
+    
+    async def load(self) -> bool:
+        """
+        Initialize HTTP client for Ollama.
+        
+        Since Ollama manages the model, we just need to
+        check that the server is reachable.
+        """
+        if self._loaded:
+            return True
+        if self._ollama_offline:
+            return False
+        if not get_settings().OLLAMA_ENABLED:
+            # Nothing is serving Ollama yet. Dialing it anyway logs a
+            # connection error on every warm-up and delays the caller's
+            # fallback to Groq by a timeout.
+            logger.info("[OllamaQwenHandler] OLLAMA_ENABLED is off; staying offline")
+            self._ollama_offline = True
+            return False
+        
+        try:
+            logger.info(f"[OllamaQwenHandler] Connecting to Ollama at {self.config.base_url}...")
+            
+            self.client = httpx.AsyncClient(
+                base_url=self.config.base_url,
+                timeout=self.config.timeout,
+            )
+            
+            # Health check with a tight 2-second timeout to fail fast
+            response = await self.client.get("/api/tags", timeout=2.0)
+            if response.status_code == 200:
+                models = response.json().get("models", [])
+                model_names = [m["name"] for m in models]
+                
+                # Check if our model exists
+                model_found = any(self.config.model in name for name in model_names)
+                if model_found:
+                    logger.info(f"[OllamaQwenHandler]  Model '{self.config.model}' available")
+                else:
+                    logger.warning(
+                        f"[OllamaQwenHandler] Model '{self.config.model}' not found. "
+                        f"Available: {model_names}"
+                    )
+                
+                self._loaded = True
+                logger.info("[OllamaQwenHandler]  Connected to Ollama")
+                return True
+            else:
+                logger.error(f"[OllamaQwenHandler] Ollama not responding: {response.status_code} (marking Ollama as offline)")
+                self._ollama_offline = True
+                return False
+                
+        except Exception as e:
+            logger.error(f"[OllamaQwenHandler] Failed to connect (marking Ollama as offline): {e}")
+            self._ollama_offline = True
+            return False
+    
+    async def unload(self) -> None:
+        """Close HTTP client."""
+        if self.client:
+            await self.client.aclose()
+            self.client = None
+        self._loaded = False
+        logger.info("[OllamaQwenHandler] Handler unloaded")
+    
+    @staticmethod
+    def _estimate_groq_tokens(messages: List[Dict[str, str]], max_tokens: int) -> int:
+        """Rough token estimate: input chars/4 + output budget, capped at 3000."""
+        input_chars = sum(len(m.get("content", "")) for m in messages)
+        return min(max(input_chars // 4, 80) + max_tokens, 3000)
+
+    @staticmethod
+    def _apply_no_think(messages: List[Dict[str, str]], model: str) -> List[Dict[str, str]]:
+        """Prepend /no_think to the first user message for Qwen3 to disable thinking mode."""
+        if "qwen3" not in model.lower():
+            return messages
+        result = list(messages)
+        for i, msg in enumerate(result):
+            if msg.get("role") == "user":
+                result[i] = {**msg, "content": f"/no_think\n{msg['content']}"}
+                break
+        return result
+
+    async def _invoke_cloud(
+        self,
+        messages_list: List[Dict[str, str]],
+        system_prompt: Optional[str],
+        max_tokens: int,
+        temperature: Optional[float],
+    ) -> Optional[str]:
+        """Attempt to call Groq or Gemini API directly, returning the response or None on failure."""
+        from api.core.groq_key_pool import get_available_groq_key, record_groq_key_usage
+
+        groq_model = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
+
+        # Build message list up front so we can estimate tokens accurately
+        full_messages: List[Dict[str, str]] = []
+        if system_prompt:
+            full_messages.append({"role": "system", "content": system_prompt})
+        full_messages.extend(messages_list)
+        full_messages = self._apply_no_think(full_messages, groq_model)
+
+        estimated = self._estimate_groq_tokens(full_messages, max_tokens)
+
+        # 1. Try Groq first
+        groq_key = await get_available_groq_key(estimated_tokens=estimated)
+        if groq_key:
+            try:
+                payload = {
+                    "model": groq_model,
+                    "messages": full_messages,
+                    "max_tokens": max_tokens,
+                    "temperature": temperature if temperature is not None else self.config.temperature,
+                    **_qwen_reasoning_overrides(groq_model),
+                }
+
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {groq_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json=payload,
+                        timeout=15.0,
+                    )
+                    if response.status_code == 200:
+                        data = response.json()
+                        tokens = data.get("usage", {}).get("total_tokens", estimated)
+                        await record_groq_key_usage(groq_key, tokens)
+                        return data["choices"][0]["message"]["content"]
+                    else:
+                        logger.warning(f"[OllamaQwenHandler] Groq returned status {response.status_code}: {response.text[:200]}")
+            except Exception as e:
+                logger.warning(f"[OllamaQwenHandler] Groq call failed: {e}")
+
+        # 2. Try Gemini fallback
+        gemini_key = os.getenv("GEMINI_API_KEY")
+        if gemini_key:
+            try:
+                from api.services.handlers.gemini_handler import get_gemini_handler
+                handler = get_gemini_handler()
+                return await handler.chat(
+                    messages=messages_list,
+                    system_prompt=system_prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+            except Exception as e:
+                logger.warning(f"[OllamaQwenHandler] Gemini fallback call failed: {e}")
+                
+        return None
+
+    async def chat(
+        self,
+        messages: Optional[List[Dict[str, str]]] = None,
+        temperature: Optional[float] = None,
+        max_tokens: int = 512,
+        system_prompt: Optional[str] = None,
+        message: Optional[str] = None,
+        system: Optional[str] = None,
+        **kwargs,
+    ) -> str:
+        """
+        Generate chat response via Ollama, falling back to Groq if Ollama is offline.
+        
+        Args:
+            messages: List of {"role": "user/assistant", "content": "..."}
+            temperature: Override config temperature
+            max_tokens: Maximum tokens to generate
+            system_prompt: System prompt (alias: system)
+            message: Simple message string (will be wrapped)
+            
+        Returns:
+            Generated response text
+        """
+        # Handle simple message input
+        if message and not messages:
+            messages = [{"role": "user", "content": message}]
+        
+        # Handle system prompt alias
+        if system and not system_prompt:
+            system_prompt = system
+        
+        messages_list = messages or []
+
+        # 1. Cloud-First Path: If prefer_cloud is enabled and keys are present, try cloud first.
+        prefer_cloud = os.getenv("TRACECAG_PREFER_CLOUD_LLM", "true").lower() in ("true", "1", "yes", "on")
+        has_cloud_keys = bool(os.getenv("GROQ_API_KEY") or os.getenv("GROQ_API_KEYS") or os.getenv("GEMINI_API_KEY"))
+
+        if prefer_cloud and has_cloud_keys:
+            logger.info("[OllamaQwenHandler] Running low-latency cloud model (Groq/Gemini)...")
+            cloud_res = await self._invoke_cloud(
+                messages_list=messages_list,
+                system_prompt=system_prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            if cloud_res is not None:
+                return cloud_res
+            logger.warning("[OllamaQwenHandler] Cloud model calls failed, falling back to local Ollama...")
+
+        # 2. Local Ollama Path (or fallback when cloud fails/unconfigured)
+        # If Ollama is offline, fall back to Groq directly
+        if not await self.load():
+            logger.info("[OllamaQwenHandler] Ollama is offline, falling back to Groq...")
+            from api.core.groq_key_pool import get_available_groq_key, record_groq_key_usage
+
+            groq_model = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
+            fallback_messages: List[Dict[str, str]] = []
+            if system_prompt:
+                fallback_messages.append({"role": "system", "content": system_prompt})
+            fallback_messages.extend(messages_list)
+            fallback_messages = self._apply_no_think(fallback_messages, groq_model)
+
+            estimated = self._estimate_groq_tokens(fallback_messages, max_tokens)
+            groq_key = await get_available_groq_key(estimated_tokens=estimated)
+            if not groq_key:
+                raise RuntimeError("Ollama is offline and no Groq API key is available in the pool")
+
+            payload = {
+                "model": groq_model,
+                "messages": fallback_messages,
+                "max_tokens": max_tokens,
+                "temperature": temperature if temperature is not None else self.config.temperature,
+                **_qwen_reasoning_overrides(groq_model),
+            }
+
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {groq_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                    timeout=20.0,
+                )
+                response.raise_for_status()
+                data = response.json()
+                tokens = data.get("usage", {}).get("total_tokens", estimated)
+                await record_groq_key_usage(groq_key, tokens)
+                return data["choices"][0]["message"]["content"]
+
+        # Build messages with system prompt
+        if system_prompt and messages_list:
+            full_messages = [{"role": "system", "content": system_prompt}]
+            full_messages.extend(messages_list)
+        else:
+            full_messages = messages_list
+        full_messages = self._apply_no_think(full_messages, self.config.model)
+        
+        payload = {
+            "model": self.config.model,
+            "messages": full_messages,
+            "stream": False,
+            "options": {
+                "temperature": temperature or self.config.temperature,
+                "top_p": self.config.top_p,
+                "num_ctx": self.config.context_length,
+                "num_thread": self.config.num_threads,
+                "num_predict": max_tokens,
+            },
+            "keep_alive": self.config.keep_alive,
+        }
+        
+        try:
+            # Use longer timeout for inference
+            timeout = httpx.Timeout(300.0, connect=30.0)
+            if self.client is None:
+                raise RuntimeError("Ollama client not initialized. Call load() first.")
+            response = await self.client.post(
+                "/api/chat",
+                json=payload,
+                timeout=timeout,
+            )
+            response.raise_for_status()
+            
+            data = response.json()
+            return data.get("message", {}).get("content", "")
+            
+        except httpx.TimeoutException:
+            logger.error("[OllamaQwenHandler] Request timeout")
+            raise RuntimeError("Ollama request timeout")
+        except Exception as e:
+            logger.error(f"[OllamaQwenHandler] Chat failed: {e}")
+            raise
+    
+    async def analyze_grammar(
+        self,
+        text: str,
+        target_language: str = "English",
+    ) -> Dict[str, Any]:
+        """
+        Analyze grammar and provide corrections.
+        
+        Returns:
+            {
+                "errors": [{"span": "...", "correction": "...", "type": "...", "explanation": "..."}],
+                "corrected_text": "...",
+                "grammar_score": 0.0-1.0,
+                "fluency_score": 0.0-1.0,
+            }
+        """
+        system_prompt = f"""You are an expert {target_language} grammar tutor.
+Analyze the following text and identify ALL grammar errors.
+For each error, provide:
+1. The error span (exact text)
+2. The correction
+3. Error type (grammar/spelling/punctuation/word_choice)
+4. Brief explanation
+
+Output JSON format:
+{{
+    "errors": [
+        {{"span": "error text", "correction": "fixed text", "type": "grammar", "explanation": "reason"}}
+    ],
+    "corrected_text": "full corrected sentence",
+    "grammar_score": 0.85,
+    "fluency_score": 0.80
+}}
+
+Be thorough but fair. Score 1.0 means perfect."""
+
+        messages = [{"role": "user", "content": f"Analyze this text:\n\n{text}"}]
+        
+        response = await self.chat(
+            messages=messages,
+            system_prompt=system_prompt,
+            temperature=0.3,  # Lower temp for analysis
+            max_tokens=800,
+        )
+        
+        # Parse JSON response
+        try:
+            # Extract JSON from response
+            if "```json" in response:
+                json_str = response.split("```json")[1].split("```")[0]
+            elif "```" in response:
+                json_str = response.split("```")[1].split("```")[0]
+            else:
+                # Try to find JSON object
+                import re
+                json_match = re.search(r'\{[\s\S]*\}', response)
+                if json_match:
+                    json_str = json_match.group()
+                else:
+                    json_str = response
+                
+            result = json.loads(json_str.strip())
+            return result
+        except json.JSONDecodeError:
+            # Fallback parsing
+            return {
+                "errors": [],
+                "corrected_text": text,
+                "grammar_score": 0.8,
+                "fluency_score": 0.8,
+                "raw_response": response,
+            }
+    
+    async def generate_response(
+        self,
+        user_input: str,
+        context: Optional[str] = None,
+        learner_level: str = "B1",
+        errors: Optional[List[Dict]] = None,
+    ) -> str:
+        """
+        Generate tutor response for the learner.
+        """
+        system_prompt = f"""You are LexiLingo, a friendly English tutor.
+Learner level: {learner_level}
+
+Guidelines:
+- Be encouraging and supportive
+- If there are errors, gently correct them with explanations
+- Adjust vocabulary complexity to the learner's level
+- Keep responses concise but helpful
+- Use simple language for lower levels, more complex for higher
+- Ask follow-up questions to keep the conversation going"""
+
+        context_str = f"\n\nContext: {context}" if context else ""
+        errors_str = ""
+        if errors:
+            errors_str = "\n\nErrors found in user's text:\n" + "\n".join(
+                f"- '{e.get('span')}' → '{e.get('correction')}' ({e.get('type')})"
+                for e in errors
+            )
+        
+        messages = [{
+            "role": "user",
+            "content": f"{user_input}{context_str}{errors_str}"
+        }]
+        
+        return await self.chat(
+            messages=messages,
+            system_prompt=system_prompt,
+            temperature=0.7,
+            max_tokens=400,
+        )
+    
+    async def invoke(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Unified invoke interface for ModelGateway.
+        
+        Args:
+            params: {
+                "task": "chat" | "grammar" | "response",
+                "text": "...",
+                "messages": [...],
+                ...other params
+            }
+            
+        Returns:
+            Task-specific result
+        """
+        task = params.get("task", "chat")
+        
+        if task == "grammar":
+            text = params.get("text", "")
+            return await self.analyze_grammar(text)
+            
+        elif task == "response":
+            return {
+                "response": await self.generate_response(
+                    user_input=params.get("text", ""),
+                    context=params.get("context"),
+                    learner_level=params.get("level", "B1"),
+                    errors=params.get("errors"),
+                )
+            }
+            
+        else:  # chat
+            messages = params.get("messages", [])
+            text = params.get("text") or params.get("message")
+            if not messages and text:
+                messages = [{"role": "user", "content": text}]
+            
+            return {
+                "response": await self.chat(
+                    messages=messages,
+                    system_prompt=params.get("system_prompt") or params.get("system"),
+                    temperature=params.get("temperature"),
+                    max_tokens=params.get("max_tokens", 512),
+                )
+            }
+
+
+# Singleton instance
+_handler: Optional[OllamaQwenHandler] = None
+
+
+def get_ollama_qwen_handler(config: Optional[OllamaQwenConfig] = None) -> OllamaQwenHandler:
+    """Get or create Ollama Qwen handler singleton."""
+    global _handler
+    if _handler is None:
+        _handler = OllamaQwenHandler(config)
+    return _handler

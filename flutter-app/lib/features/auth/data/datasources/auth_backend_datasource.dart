@@ -1,0 +1,271 @@
+import '../../../../core/network/api_client.dart';
+import '../../../../core/services/user_scope_service.dart';
+import '../../../../core/utils/app_logger.dart';
+import '../models/auth_models.dart';
+import '../models/user_model.dart';
+import 'device_manager.dart';
+import 'token_storage.dart';
+
+const _tag = 'AuthBackendDataSource';
+
+/// Auth remote datasource using backend API
+/// Replaces Firebase auth with custom backend authentication
+class AuthBackendDataSource {
+  final ApiClient apiClient;
+  final TokenStorage tokenStorage;
+  final DeviceManager deviceManager;
+
+  AuthBackendDataSource({
+    required this.apiClient,
+    required this.tokenStorage,
+    required this.deviceManager,
+  });
+
+  /// Register new user with email and password
+  /// POST /auth/register
+  Future<UserModel> register({
+    required String email,
+    required String username,
+    required String password,
+    String? displayName,
+  }) async {
+    final request = RegisterRequest(
+      email: email,
+      username: username,
+      password: password,
+      displayName: displayName,
+    );
+
+    final envelope = await apiClient.postEnvelope<Map<String, dynamic>>(
+      '/auth/register',
+      body: request.toJson(),
+      fromJson: (data) => data as Map<String, dynamic>,
+    );
+
+    return UserModel.fromJson(envelope.data);
+  }
+
+  /// Login with email and password
+  /// POST /auth/login
+  /// Returns tokens and user data
+  Future<LoginResponse> login({
+    required String email,
+    required String password,
+  }) async {
+    logDebug(_tag, 'Starting login for $email');
+
+    final request = LoginRequest(email: email, password: password);
+
+    final envelope = await apiClient.postEnvelope<Map<String, dynamic>>(
+      '/auth/login',
+      body: request.toJson(),
+      fromJson: (data) => data as Map<String, dynamic>,
+    );
+
+    logDebug(_tag, 'Login response received');
+    final loginResponse = LoginResponse.fromJson(envelope.data);
+    logDebug(
+      _tag,
+      'Token parsed, length: ${loginResponse.tokens.accessToken.length}',
+    );
+
+    // Save tokens securely
+    await tokenStorage.saveTokens(loginResponse.tokens);
+    await UserScopeService.setActiveUserId(loginResponse.userId);
+    logDebug(_tag, 'Tokens saved, now registering device...');
+
+    // Register device with FCM token
+    await _registerDevice();
+    logInfo(_tag, 'Login complete');
+
+    return loginResponse;
+  }
+
+  /// Login with Google (OAuth)
+  /// POST /auth/google
+  Future<LoginResponse> loginWithGoogle(String idToken) async {
+    final envelope = await apiClient.postEnvelope<Map<String, dynamic>>(
+      '/auth/google',
+      body: {'id_token': idToken, 'source': 'app'},
+      fromJson: (data) => data as Map<String, dynamic>,
+    );
+
+    final loginResponse = LoginResponse.fromJson(envelope.data);
+
+    await tokenStorage.saveTokens(loginResponse.tokens);
+    await UserScopeService.setActiveUserId(loginResponse.userId);
+    await _registerDevice();
+
+    return loginResponse;
+  }
+
+  /// Login with Facebook (via Firebase)
+  /// POST /auth/facebook
+  Future<LoginResponse> loginWithFacebook(String firebaseIdToken) async {
+    final envelope = await apiClient.postEnvelope<Map<String, dynamic>>(
+      '/auth/facebook',
+      body: {'id_token': firebaseIdToken, 'source': 'app'},
+      fromJson: (data) => data as Map<String, dynamic>,
+    );
+
+    final loginResponse = LoginResponse.fromJson(envelope.data);
+
+    await tokenStorage.saveTokens(loginResponse.tokens);
+    await UserScopeService.setActiveUserId(loginResponse.userId);
+    await _registerDevice();
+
+    return loginResponse;
+  }
+
+  /// Refresh access token using refresh token
+  /// POST /auth/refresh-token
+  Future<AuthTokens> refreshToken(String refreshToken) async {
+    final request = RefreshTokenRequest(refreshToken: refreshToken);
+
+    final envelope = await apiClient.postEnvelope<Map<String, dynamic>>(
+      '/auth/refresh',
+      body: request.toJson(),
+      fromJson: (data) => data as Map<String, dynamic>,
+    );
+
+    final tokens = AuthTokens.fromJson(envelope.data);
+
+    // Update stored tokens (token rotation)
+    await tokenStorage.saveTokens(tokens);
+
+    return tokens;
+  }
+
+  /// Logout user
+  /// POST /auth/logout
+  Future<void> logout() async {
+    try {
+      await apiClient.post('/auth/logout');
+    } catch (e) {
+      // Even if logout fails, clear local tokens
+    } finally {
+      await tokenStorage.clearTokens();
+      await UserScopeService.clearActiveUserId();
+    }
+  }
+
+  /// Get current user profile
+  /// GET /users/me
+  Future<UserModel> getCurrentUser() async {
+    logDebug(_tag, 'Getting current user...');
+    final envelope = await apiClient.getEnvelope<Map<String, dynamic>>(
+      '/users/me',
+      fromJson: (data) => data as Map<String, dynamic>,
+    );
+    logDebug(_tag, 'User received: ${envelope.data['email']}');
+
+    final userModel = UserModel.fromJson(envelope.data);
+    await UserScopeService.setActiveUserId(userModel.id);
+
+    return userModel;
+  }
+
+  /// Update user profile
+  /// PUT /users/me
+  Future<UserModel> updateProfile({
+    String? displayName,
+    String? avatarUrl,
+    String? nativeLanguage,
+    String? targetLanguage,
+    String? level,
+    String? goal,
+    String? interest,
+    bool? isOnboardingCompleted,
+  }) async {
+    final envelope = await apiClient.putEnvelope<Map<String, dynamic>>(
+      '/users/me',
+      body: {
+        if (displayName != null) 'display_name': displayName,
+        if (avatarUrl != null) 'avatar_url': avatarUrl,
+        if (nativeLanguage != null) 'native_language': nativeLanguage,
+        if (targetLanguage != null) 'target_language': targetLanguage,
+        if (level != null) 'level': level,
+        if (goal != null) 'goal': goal,
+        if (interest != null) 'interest': interest,
+        if (isOnboardingCompleted != null)
+          'is_onboarding_completed': isOnboardingCompleted,
+      },
+      fromJson: (data) => data as Map<String, dynamic>,
+    );
+
+    return UserModel.fromJson(envelope.data);
+  }
+
+  /// Register device for push notifications
+  /// POST /devices
+  Future<void> _registerDevice() async {
+    try {
+      final deviceInfo = await deviceManager.getDeviceInfo();
+      await apiClient.post('/devices', body: deviceInfo.toJson());
+    } catch (e) {
+      // Device registration is not critical, log but don't fail
+      logWarn(_tag, 'Device registration failed: $e');
+    }
+  }
+
+  /// Update device FCM token
+  /// PUT /devices/{device_id}
+  Future<void> updateDeviceFCMToken(String fcmToken) async {
+    try {
+      final deviceInfo = await deviceManager.getDeviceInfo();
+      await apiClient.post(
+        '/devices/${deviceInfo.deviceId}',
+        body: {'fcm_token': fcmToken},
+      );
+    } catch (e) {
+      logWarn(_tag, 'FCM token update failed: $e');
+    }
+  }
+
+  /// Check if user is authenticated (has valid tokens)
+  Future<bool> isAuthenticated() async {
+    return await tokenStorage.hasTokens();
+  }
+
+  /// Verify email with token
+  /// POST /auth/verify-email
+  Future<void> verifyEmail(String token) async {
+    await apiClient.post('/auth/verify-email', body: {'token': token});
+  }
+
+  /// Resend verification email
+  /// POST /auth/resend-verification
+  Future<void> resendVerificationEmail(String email) async {
+    await apiClient.post('/auth/resend-verification', body: {'email': email});
+  }
+
+  /// Request password reset
+  /// POST /auth/forgot-password
+  Future<void> requestPasswordReset(String email) async {
+    await apiClient.post('/auth/forgot-password', body: {'email': email});
+  }
+
+  /// Reset password with token
+  /// POST /auth/reset-password
+  Future<void> resetPassword({
+    required String token,
+    required String newPassword,
+  }) async {
+    await apiClient.post(
+      '/auth/reset-password',
+      body: {'token': token, 'new_password': newPassword},
+    );
+  }
+
+  /// Change password (authenticated user)
+  /// POST /auth/change-password
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    await apiClient.post(
+      '/auth/change-password',
+      body: {'current_password': currentPassword, 'new_password': newPassword},
+    );
+  }
+}

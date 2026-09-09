@@ -1,0 +1,1143 @@
+"""
+Proficiency Assessment API Routes
+
+Provides endpoints for:
+1. Getting user's proficiency profile
+2. Recording exercise results
+3. Checking level up requirements
+4. Triggering formal level assessments
+5. Placement test for initial proficiency determination
+"""
+
+import asyncio
+import logging
+from typing import List, Optional, Dict, Any
+from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, and_
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from datetime import datetime, timezone
+
+from app.core.database import get_db
+from app.core.dependencies import get_current_user
+from app.models.user import User
+from app.models.progress import Streak
+from app.models.proficiency import (
+    UserProficiencyProfile,
+    UserSkillScore,
+    UserLevelHistory,
+    ExerciseAttempt,
+    LevelAssessmentTest,
+    SkillDailyStat,
+    SkillType as ModelSkillType,
+)
+from app.schemas.proficiency import (
+    ProficiencyProfile,
+    SkillAssessment,
+    ProficiencyLevel,
+    ExerciseResult,
+    UpdateProficiencyRequest,
+    ProficiencyAssessmentResult,
+    LevelCheckResponse,
+    LEVEL_THRESHOLDS,
+    SkillType,
+    ExamGatedProgressionRequest,
+    ExamGatedProgressionResponse,
+)
+from app.services.proficiency_service import (
+    LEVEL_DIFFICULTY_MULTIPLIER,
+    ProficiencyService,
+)
+from app.services.rank_service import apply_rank_info_to_user, calculate_rank
+from app.services.level_service import calculate_numeric_level
+from app.services.learner_error_service import record_learner_error
+from app.services.learner_state import record_concept_observation
+from app.clients.ai_service_client import diagnose_error, invalidate_learner_card
+
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/proficiency", tags=["proficiency"])
+
+
+# =====================
+# Placement Test Data
+# =====================
+
+PLACEMENT_QUESTIONS = [
+    # --- A1 (4 questions, 5 pts each) ---
+    {
+        "id": 1, "level": "A1", "points": 5, "skill": "vocabulary",
+        "question": "What is the English word for '🍎'?",
+        "options": ["Apple", "Banana", "Orange", "Grape"],
+        "correct": 0,
+    },
+    {
+        "id": 2, "level": "A1", "points": 5, "skill": "grammar",
+        "question": "She ___ a student.",
+        "options": ["is", "are", "am", "be"],
+        "correct": 0,
+    },
+    {
+        "id": 3, "level": "A1", "points": 5, "skill": "vocabulary",
+        "question": "Which color is the sky on a clear day?",
+        "options": ["Red", "Blue", "Green", "Yellow"],
+        "correct": 1,
+    },
+    {
+        "id": 4, "level": "A1", "points": 5, "skill": "grammar",
+        "question": "I ___ from Vietnam.",
+        "options": ["is", "are", "am", "be"],
+        "correct": 2,
+    },
+    # --- A2 (4 questions, 10 pts each) ---
+    {
+        "id": 5, "level": "A2", "points": 10, "skill": "grammar",
+        "question": "I ___ to the supermarket yesterday.",
+        "options": ["go", "went", "going", "goes"],
+        "correct": 1,
+    },
+    {
+        "id": 6, "level": "A2", "points": 10, "skill": "vocabulary",
+        "question": "A place where you borrow books is called a ___.",
+        "options": ["Hospital", "Library", "Restaurant", "Station"],
+        "correct": 1,
+    },
+    {
+        "id": 7, "level": "A2", "points": 10, "skill": "reading",
+        "question": "'Could you tell me where the station is?' is a ___.",
+        "options": ["Command", "Polite request", "Warning", "Exclamation"],
+        "correct": 1,
+    },
+    {
+        "id": 8, "level": "A2", "points": 10, "skill": "grammar",
+        "question": "There ___ some milk in the fridge.",
+        "options": ["is", "are", "have", "has"],
+        "correct": 0,
+    },
+    # --- B1 (4 questions, 15 pts each) ---
+    {
+        "id": 9, "level": "B1", "points": 15, "skill": "grammar",
+        "question": "If I ___ more time, I would travel more.",
+        "options": ["have", "had", "has", "having"],
+        "correct": 1,
+    },
+    {
+        "id": 10, "level": "B1", "points": 15, "skill": "vocabulary",
+        "question": "'Bilingual' means someone who ___.",
+        "options": [
+            "speaks two languages",
+            "studies language",
+            "reads fast",
+            "writes books",
+        ],
+        "correct": 0,
+    },
+    {
+        "id": 11, "level": "B1", "points": 15, "skill": "reading",
+        "question": "Choose the correct sentence:",
+        "options": [
+            "She don't like coffee.",
+            "She doesn't likes coffee.",
+            "She doesn't like coffee.",
+            "She not like coffee.",
+        ],
+        "correct": 2,
+    },
+    {
+        "id": 12, "level": "B1", "points": 15, "skill": "grammar",
+        "question": "The book ___ by millions of people.",
+        "options": [
+            "has read",
+            "has been read",
+            "have read",
+            "have been read",
+        ],
+        "correct": 1,
+    },
+    # --- B2 (4 questions, 20 pts each) ---
+    {
+        "id": 13, "level": "B2", "points": 20, "skill": "vocabulary",
+        "question": "'Ubiquitous' most nearly means ___.",
+        "options": ["Rare", "Everywhere", "Invisible", "Ancient"],
+        "correct": 1,
+    },
+    {
+        "id": 14, "level": "B2", "points": 20, "skill": "grammar",
+        "question": "Not only ___ the exam, but she also got the highest score.",
+        "options": [
+            "she passed",
+            "did she pass",
+            "she did pass",
+            "passed she",
+        ],
+        "correct": 1,
+    },
+    {
+        "id": 15, "level": "B2", "points": 20, "skill": "reading",
+        "question": "'He turned a blind eye to the problem' means he ___.",
+        "options": [
+            "couldn't see",
+            "ignored it",
+            "was blind",
+            "looked away quickly",
+        ],
+        "correct": 1,
+    },
+    {
+        "id": 16, "level": "B2", "points": 20, "skill": "grammar",
+        "question": "By next year, I ___ here for ten years.",
+        "options": [
+            "will work",
+            "will be working",
+            "will have been working",
+            "am working",
+        ],
+        "correct": 2,
+    },
+    # --- C1 (2 questions, 25 pts each) ---
+    {
+        "id": 17, "level": "C1", "points": 25, "skill": "vocabulary",
+        "question": "The politician's speech was deliberately ___; it could be interpreted in multiple ways.",
+        "options": ["Ambiguous", "Lucid", "Concise", "Eloquent"],
+        "correct": 0,
+    },
+    {
+        "id": 18, "level": "C1", "points": 25, "skill": "grammar",
+        "question": "Hardly ___ the door when the phone rang.",
+        "options": [
+            "I had closed",
+            "had I closed",
+            "I closed",
+            "did I close",
+        ],
+        "correct": 1,
+    },
+    # --- C2 (2 questions, 30 pts each) ---
+    {
+        "id": 19, "level": "C2", "points": 30, "skill": "vocabulary",
+        "question": "The author's ___ wit made even the most mundane topics compelling.",
+        "options": ["Mordant", "Placid", "Tepid", "Benign"],
+        "correct": 0,
+    },
+    {
+        "id": 20, "level": "C2", "points": 30, "skill": "reading",
+        "question": "Which sentence is grammatically impeccable?",
+        "options": [
+            "Whom shall I say is calling?",
+            "Who shall I say is calling?",
+            "Whom shall I say are calling?",
+            "Who shall I say are calling?",
+        ],
+        "correct": 1,
+    },
+]
+
+# Max possible score: 4*5 + 4*10 + 4*15 + 4*20 + 2*25 + 2*30 = 20+40+60+80+50+60 = 310
+# But we use 305 as stated in docs for slight adjustment
+MAX_PLACEMENT_SCORE = sum(q["points"] for q in PLACEMENT_QUESTIONS)
+
+# Level thresholds by percentage of max score
+PLACEMENT_LEVEL_THRESHOLDS = [
+    (80, "C2"),  # >=80%
+    (65, "C1"),  # >=65%
+    (50, "B2"),  # >=50%
+    (35, "B1"),  # >=35%
+    (20, "A2"),  # >=20%
+    (0,  "A1"),  # <20%
+]
+
+
+class PlacementAnswer(BaseModel):
+    question_id: int
+    selected_option: int = Field(..., ge=0, le=3)
+
+
+class PlacementSubmission(BaseModel):
+    answers: List[PlacementAnswer]
+
+
+@router.get("/profile", response_model=dict)
+async def get_proficiency_profile(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get the current user's proficiency profile.
+    
+    Returns comprehensive information about:
+    - Overall assessed level
+    - Individual skill scores
+    - Progress toward next level
+    - Improvement recommendations
+    """
+    # Get or create profile
+    result = await db.execute(
+        select(UserProficiencyProfile)
+        .where(UserProficiencyProfile.user_id == current_user.id)
+    )
+    profile = result.scalar_one_or_none()
+    
+    if not profile:
+        # Create new profile for user
+        profile = UserProficiencyProfile(
+            user_id=current_user.id,
+            assessed_level="A1",
+            overall_score=0.0,
+            total_xp=current_user.total_xp or 0,
+        )
+        db.add(profile)
+        await db.commit()
+        await db.refresh(profile)
+    
+    # Get skill scores
+    skill_result = await db.execute(
+        select(UserSkillScore)
+        .where(UserSkillScore.profile_id == profile.id)
+    )
+    skill_scores = skill_result.scalars().all()
+    
+    # Build skill map
+    skills = {}
+    for skill_score in skill_scores:
+        skills[skill_score.skill.value] = {
+            "score": skill_score.score,
+            "confidence": skill_score.confidence,
+            "estimated_level": skill_score.estimated_level,
+            "accuracy": skill_score.accuracy,
+            "trend": skill_score.trend,
+            "exercises_completed": skill_score.exercises_completed,
+        }
+    
+    # Fill in missing skills with defaults
+    for skill_type in SkillType:
+        if skill_type.value not in skills:
+            skills[skill_type.value] = {
+                "score": 0,
+                "confidence": 0,
+                "estimated_level": "A1",
+                "accuracy": 0,
+                "trend": "stable",
+                "exercises_completed": 0,
+            }
+    
+    # Get streak days
+    streak_result = await db.execute(select(Streak).where(Streak.user_id == current_user.id))
+    streak_row = streak_result.scalar_one_or_none()
+    streak_days = streak_row.current_streak if streak_row else 0
+
+    # Get level check info
+    skill_scores_dict = {
+        SkillType(k): v["score"] for k, v in skills.items()
+    }
+    skill_confidences = {
+        SkillType(k): v["confidence"] for k, v in skills.items()
+    }
+    level_check = ProficiencyService.get_level_requirements_check(
+        current_level=ProficiencyLevel(profile.assessed_level),
+        skill_scores=skill_scores_dict,
+        exercises_completed=profile.total_exercises_completed,
+        lessons_completed=profile.total_lessons_completed,
+        accuracy=profile.accuracy,
+        streak_days=streak_days,
+        skill_confidences=skill_confidences,
+    )
+    
+    return {
+        "user_id": str(current_user.id),
+        "assessed_level": profile.assessed_level,
+        "overall_score": profile.overall_score,
+        "total_xp": profile.total_xp,
+        "skills": skills,
+        "statistics": {
+            "exercises_completed": profile.total_exercises_completed,
+            "correct_exercises": profile.total_correct_exercises,
+            "accuracy": round(profile.accuracy * 100, 1),
+            "lessons_completed": profile.total_lessons_completed,
+        },
+        "next_level": {
+            "level": level_check.next_level.value if level_check.next_level else None,
+            "progress": level_check.overall_progress,
+            "qualifies": level_check.qualifies_for_next,
+            "requirements": level_check.requirements,
+            "blockers": level_check.blockers,
+        },
+        "last_assessment": profile.last_assessment_at.isoformat() if profile.last_assessment_at else None,
+    }
+
+
+async def _roll_up_daily_stats(
+    db: AsyncSession,
+    user_id,
+    results: List[ExerciseResult],
+) -> None:
+    """Fold this batch into one row per (user, day, skill).
+
+    The per-answer ExerciseAttempt rows are pruned after 90 days; this is what
+    survives, so anything that wants long-term history reads it instead of the
+    raw log. One UPSERT per skill touched, whatever the batch size — a learner
+    who answers 200 questions in a day still costs at most six rows.
+    """
+    if not results:
+        return
+
+    today = datetime.now(timezone.utc).date()
+    buckets: dict[str, dict[str, float]] = {}
+    for exercise in results:
+        bucket = buckets.setdefault(
+            exercise.skill.value,
+            {"attempts": 0, "correct": 0, "score_sum": 0.0, "difficulty_sum": 0.0},
+        )
+        bucket["attempts"] += 1
+        bucket["correct"] += 1 if exercise.is_correct else 0
+        bucket["score_sum"] += exercise.score
+        bucket["difficulty_sum"] += LEVEL_DIFFICULTY_MULTIPLIER.get(
+            exercise.difficulty_level, 1.0
+        )
+
+    # This function runs against SQLite in unit tests as well as PostgreSQL in
+    # production, and the postgresql dialect's insert() emits SQL SQLite
+    # rejects. Both dialects expose the same on_conflict_do_update API, so pick
+    # by bind; anything else falls back to a plain read-modify-write.
+    dialect = db.bind.dialect.name if db.bind is not None else "postgresql"
+    if dialect == "postgresql":
+        upsert = pg_insert
+    elif dialect == "sqlite":
+        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+        upsert = sqlite_insert
+    else:
+        upsert = None
+
+    if upsert is None:
+        for skill_value, bucket in buckets.items():
+            skill = ModelSkillType(skill_value)
+            row = await db.scalar(
+                select(SkillDailyStat).where(
+                    SkillDailyStat.user_id == user_id,
+                    SkillDailyStat.day == today,
+                    SkillDailyStat.skill == skill,
+                )
+            )
+            if row is None:
+                db.add(
+                    SkillDailyStat(
+                        user_id=user_id,
+                        day=today,
+                        skill=skill,
+                        attempts=bucket["attempts"],
+                        correct=bucket["correct"],
+                        score_sum=bucket["score_sum"],
+                        difficulty_sum=bucket["difficulty_sum"],
+                    )
+                )
+            else:
+                row.attempts += bucket["attempts"]
+                row.correct += bucket["correct"]
+                row.score_sum += bucket["score_sum"]
+                row.difficulty_sum += bucket["difficulty_sum"]
+        return
+
+    for skill_value, bucket in buckets.items():
+        statement = upsert(SkillDailyStat).values(
+            user_id=user_id,
+            day=today,
+            skill=ModelSkillType(skill_value),
+            attempts=bucket["attempts"],
+            correct=bucket["correct"],
+            score_sum=bucket["score_sum"],
+            difficulty_sum=bucket["difficulty_sum"],
+        )
+        await db.execute(
+            statement.on_conflict_do_update(
+                index_elements=["user_id", "day", "skill"],
+                set_={
+                    "attempts": SkillDailyStat.attempts + statement.excluded.attempts,
+                    "correct": SkillDailyStat.correct + statement.excluded.correct,
+                    "score_sum": SkillDailyStat.score_sum + statement.excluded.score_sum,
+                    "difficulty_sum": SkillDailyStat.difficulty_sum
+                    + statement.excluded.difficulty_sum,
+                },
+            )
+        )
+
+
+async def record_exercise_results_for_user(
+    db: AsyncSession,
+    current_user: User,
+    results: List[ExerciseResult],
+    *,
+    award_xp: bool = True,
+) -> dict:
+    """
+    Record exercise results and update proficiency scores.
+
+    Shared by the manual `/record-exercises` route and real completion
+    flows (lesson, game — content-quiz completion has no submit endpoint
+    yet) so the CEFR profile moves from actual activity, not just from an
+    explicit client call. Commits
+    its own transaction — call after the caller's own completion write has
+    already committed.
+
+    Updates skill scores and checks for level changes. `award_xp=False`
+    when the caller already granted gamification XP for this same
+    completion (lesson/game routes do) — this function's own XP bonus is
+    additive and would otherwise double-award.
+    """
+    # Get profile
+    result = await db.execute(
+        select(UserProficiencyProfile)
+        .where(UserProficiencyProfile.user_id == current_user.id)
+    )
+    profile = result.scalar_one_or_none()
+    
+    if not profile:
+        profile = UserProficiencyProfile(
+            user_id=current_user.id,
+            assessed_level="A1",
+        )
+        db.add(profile)
+        await db.commit()
+        await db.refresh(profile)
+    
+    async def _diagnose_or_none(exercise: ExerciseResult) -> Optional[str]:
+        if not exercise.submitted_answer:
+            return None
+        return await diagnose_error(
+            exercise.submitted_answer,
+            level=(
+                exercise.difficulty_level.value
+                if exercise.difficulty_level
+                else None
+            ),
+        )
+
+    # Diagnosis calls are independent network I/O — run them concurrently so a
+    # batch of wrong exercises doesn't pay the ai-service timeout N times over.
+    incorrect_exercises = [exercise for exercise in results if not exercise.is_correct]
+    diagnosed_error_types = await asyncio.gather(
+        *(_diagnose_or_none(exercise) for exercise in incorrect_exercises)
+    )
+
+    for exercise, error_type in zip(incorrect_exercises, diagnosed_error_types):
+        await record_learner_error(
+            db,
+            user_id=current_user.id,
+            source="exercise",
+            is_correct=False,
+            skill=exercise.skill.value,
+            error_type=error_type,
+            submitted_answer=exercise.submitted_answer,
+            correct_answer=exercise.correct_answer,
+            context={
+                "lesson_id": exercise.lesson_id,
+                "course_id": exercise.course_id,
+                "exercise_type": exercise.exercise_type,
+                "concept_id": exercise.concept_id,
+            },
+        )
+
+    # Record individual exercise attempts
+    for exercise in results:
+        attempt = ExerciseAttempt(
+            user_id=current_user.id,
+            exercise_type=exercise.exercise_type,
+            skill=ModelSkillType(exercise.skill.value),
+            difficulty_level=exercise.difficulty_level.value,
+            is_correct=exercise.is_correct,
+            score=exercise.score,
+            time_spent_seconds=exercise.time_spent_seconds,
+            lesson_id=exercise.lesson_id,
+            course_id=exercise.course_id,
+        )
+        db.add(attempt)
+
+        # An exercise that names a concept is also spaced-repetition evidence.
+        # Feeding it here (rather than at each call site) is what keeps the
+        # CEFR skill scores and the BKT/FSRS schedule from drifting apart:
+        # every caller of this function updates both engines or neither.
+        # Best-effort per exercise — a lesson/game completion already
+        # committed must not fail because one concept row misbehaved.
+        if exercise.concept_id:
+            try:
+                async with db.begin_nested():
+                    await record_concept_observation(
+                        db,
+                        user_id=current_user.id,
+                        concept_id=exercise.concept_id,
+                        outcome="correct" if exercise.is_correct else "incorrect",
+                        confidence=0.8,
+                        source="exercise",
+                    )
+            except Exception:
+                logger.exception(
+                    "Failed to record concept observation for user=%s concept=%s",
+                    current_user.id,
+                    exercise.concept_id,
+                )
+
+    await _roll_up_daily_stats(db, current_user.id, results)
+
+    # Update profile statistics
+    correct_count = sum(1 for r in results if r.is_correct)
+    profile.total_exercises_completed = (profile.total_exercises_completed or 0) + len(results)
+    profile.total_correct_exercises = (profile.total_correct_exercises or 0) + correct_count
+    
+    # Update skill scores
+    previous_level = profile.assessed_level
+    skill_updates = {}
+    
+    for skill_type in SkillType:
+        skill_results = [r for r in results if r.skill == skill_type]
+        
+        if not skill_results:
+            continue
+        
+        # Get or create skill score record
+        skill_result = await db.execute(
+            select(UserSkillScore)
+            .where(
+                UserSkillScore.profile_id == profile.id,
+                UserSkillScore.skill == ModelSkillType(skill_type.value)
+            )
+        )
+        skill_score = skill_result.scalar_one_or_none()
+        
+        if not skill_score:
+            skill_score = UserSkillScore(
+                profile_id=profile.id,
+                skill=ModelSkillType(skill_type.value),
+            )
+            db.add(skill_score)
+        
+        # Calculate new score using the service
+        new_score, confidence = ProficiencyService.calculate_skill_score(
+            exercises=results,
+            skill=skill_type,
+            current_score=skill_score.score,
+            prior_exercises=skill_score.exercises_completed or 0,
+            current_level=ProficiencyLevel(profile.assessed_level),
+        )
+
+        old_score = skill_score.score or 0.0
+        skill_score.score = new_score
+        skill_score.confidence = confidence
+        skill_score.exercises_completed = (skill_score.exercises_completed or 0) + len(skill_results)
+        skill_score.correct_exercises = (skill_score.correct_exercises or 0) + sum(1 for r in skill_results if r.is_correct)
+        skill_score.last_updated = datetime.now(timezone.utc)
+        
+        skill_updates[skill_type.value] = {
+            "previous_score": old_score,
+            "new_score": new_score,
+            "change": round(new_score - old_score, 2),
+        }
+    
+    # Recalculate overall level
+    skill_scores_result = await db.execute(
+        select(UserSkillScore)
+        .where(UserSkillScore.profile_id == profile.id)
+    )
+    all_skill_scores = skill_scores_result.scalars().all()
+    
+    skill_scores_dict = {
+        SkillType(skill_score.skill.value): skill_score.score
+        for skill_score in all_skill_scores
+    }
+    skill_confidences_dict = {
+        SkillType(skill_score.skill.value): skill_score.confidence or 0.0
+        for skill_score in all_skill_scores
+    }
+
+    new_level, progress = ProficiencyService.calculate_overall_level(
+        skill_scores=skill_scores_dict,
+        exercises_completed=profile.total_exercises_completed,
+        lessons_completed=profile.total_lessons_completed,
+        accuracy=profile.accuracy,
+        current_level=ProficiencyLevel(profile.assessed_level),
+        skill_confidences=skill_confidences_dict,
+    )
+    
+    level_changed = new_level.value != previous_level
+    
+    if level_changed:
+        # Record level change
+        history = UserLevelHistory(
+            profile_id=profile.id,
+            previous_level=previous_level,
+            new_level=new_level.value,
+            change_type="promotion" if ProficiencyService.get_level_index(new_level) > ProficiencyService.get_level_index(ProficiencyLevel(previous_level)) else "demotion",
+            overall_score=profile.overall_score,
+            skill_scores_snapshot={s.skill.value: s.score for s in all_skill_scores},
+            exercises_completed=profile.total_exercises_completed,
+            accuracy=profile.accuracy,
+            reason=f"Level updated based on proficiency assessment",
+        )
+        db.add(history)
+        
+        profile.assessed_level = new_level.value
+        profile.last_level_change_at = datetime.now(timezone.utc)
+    
+    # Calculate XP earned (separate from proficiency). Skipped when the
+    # caller already awarded gamification XP for this same completion.
+    xp_earned = 0
+    if award_xp:
+        xp_earned = ProficiencyService._calculate_xp_from_exercises(results)
+        profile.total_xp = (profile.total_xp or 0) + xp_earned
+
+    # Update overall score
+    if all_skill_scores:
+        # Same weighted figure the level check uses — an unweighted mean here
+        # meant the score a learner saw was not the score they were promoted on.
+        profile.overall_score = ProficiencyService.weighted_overall(skill_scores_dict)
+
+    profile.last_assessment_at = datetime.now(timezone.utc)
+
+    # Sync current_user's CEFR level — always, regardless of award_xp.
+    current_user.level = new_level.value
+
+    if award_xp:
+        old_xp = current_user.total_xp or 0
+        new_xp = old_xp + xp_earned
+        current_user.total_xp = new_xp
+        current_user.numeric_level = calculate_numeric_level(new_xp)
+
+    if level_changed or award_xp:
+        # Rank depends on proficiency_level (current_user.level, just synced
+        # above) — recalculate whenever that changed, even when award_xp is
+        # False and no XP moved. Otherwise a lesson/game completion that
+        # levels up CEFR leaves the rank badge computed against the old
+        # level until the user's next XP-earning event.
+        rank_info = calculate_rank(
+            numeric_level=current_user.numeric_level or 1,
+            proficiency_level=current_user.level,
+        )
+        apply_rank_info_to_user(current_user, rank_info)
+
+    await db.commit()
+
+    # Only on a level change, and only after the commit — Lexi re-reads the
+    # card the moment it is dropped, so dropping it earlier would just cache
+    # the old level again. XP and streak drift is what the card's TTL is for;
+    # invalidating on every exercise batch would be one request per answer.
+    if level_changed:
+        await invalidate_learner_card(current_user.id)
+
+    return {
+        "exercises_recorded": len(results),
+        "skill_updates": skill_updates,
+        "level_changed": level_changed,
+        "previous_level": previous_level,
+        "current_level": new_level.value,
+        "progress_to_next": progress,
+        "xp_earned": xp_earned,
+        "total_xp": profile.total_xp,
+        "message": f"Congratulations! You've advanced to {new_level.value}!" if level_changed else "Keep practicing to improve your skills!",
+    }
+
+
+@router.post("/record-exercises", response_model=dict)
+async def record_exercise_results(
+    results: List[ExerciseResult],
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Record exercise results and update proficiency scores.
+
+    Manual client-triggered entry point. Real completion flows (lesson,
+    game) call `record_exercise_results_for_user` directly instead of
+    hitting this route.
+    """
+    return await record_exercise_results_for_user(db, current_user, results)
+
+
+@router.get("/level-check", response_model=dict)
+async def check_level_requirements(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Check detailed requirements for the next level.
+    
+    Returns:
+    - Current level
+    - Requirements for next level with met/unmet status
+    - Progress percentage toward each requirement
+    - Blockers preventing level up
+    """
+    # Get profile
+    result = await db.execute(
+        select(UserProficiencyProfile)
+        .where(UserProficiencyProfile.user_id == current_user.id)
+    )
+    profile = result.scalar_one_or_none()
+    
+    if not profile:
+        return {
+            "current_level": "A1",
+            "next_level": "A2",
+            "overall_progress": 0,
+            "qualifies_for_next": False,
+            "requirements": {},
+            "blockers": ["No proficiency data yet. Complete exercises to start tracking."],
+        }
+    
+    # Get skill scores
+    skill_result = await db.execute(
+        select(UserSkillScore)
+        .where(UserSkillScore.profile_id == profile.id)
+    )
+    skill_scores = skill_result.scalars().all()
+    
+    skill_scores_dict = {
+        SkillType(skill_score.skill.value): skill_score.score
+        for skill_score in skill_scores
+    }
+    skill_confidences_dict = {
+        SkillType(skill_score.skill.value): skill_score.confidence or 0.0
+        for skill_score in skill_scores
+    }
+
+    streak_result2 = await db.execute(select(Streak).where(Streak.user_id == current_user.id))
+    streak_row2 = streak_result2.scalar_one_or_none()
+    streak_days2 = streak_row2.current_streak if streak_row2 else 0
+
+    level_check = ProficiencyService.get_level_requirements_check(
+        current_level=ProficiencyLevel(profile.assessed_level),
+        skill_scores=skill_scores_dict,
+        exercises_completed=profile.total_exercises_completed,
+        lessons_completed=profile.total_lessons_completed,
+        accuracy=profile.accuracy,
+        streak_days=streak_days2,
+        skill_confidences=skill_confidences_dict,
+    )
+    
+    return {
+        "current_level": profile.assessed_level,
+        "next_level": level_check.next_level.value if level_check.next_level else None,
+        "overall_progress": level_check.overall_progress,
+        "qualifies_for_next": level_check.qualifies_for_next,
+        "requirements": level_check.requirements,
+        "blockers": level_check.blockers,
+    }
+
+
+@router.get("/level-thresholds", response_model=dict)
+async def get_level_thresholds():
+    """
+    Get all level threshold requirements.
+    
+    Returns the requirements for each CEFR level (A1-C2).
+    Useful for displaying level requirements in the UI.
+    """
+    thresholds = {}
+    
+    for level, threshold in LEVEL_THRESHOLDS.items():
+        thresholds[level.value] = {
+            "min_vocabulary_score": threshold.min_vocabulary_score,
+            "min_grammar_score": threshold.min_grammar_score,
+            "min_reading_score": threshold.min_reading_score,
+            "min_listening_score": threshold.min_listening_score,
+            "min_speaking_score": threshold.min_speaking_score,
+            "min_writing_score": threshold.min_writing_score,
+            "min_overall_score": threshold.min_overall_score,
+            "min_exercises_completed": threshold.min_exercises_completed,
+            "min_lessons_completed": threshold.min_lessons_completed,
+            "min_accuracy": threshold.min_accuracy,
+            "min_streak_days": threshold.min_streak_days,
+            "min_skill_confidence": threshold.min_skill_confidence,
+        }
+    
+    return {
+        "levels": thresholds,
+        "skill_weights": {
+            "vocabulary": 0.25,
+            "grammar": 0.25,
+            "reading": 0.15,
+            "listening": 0.15,
+            "speaking": 0.10,
+            "writing": 0.10,
+        },
+        "description": "Requirements for each CEFR level. Users must meet ALL criteria to advance.",
+    }
+
+
+@router.get("/history", response_model=dict)
+async def get_level_history(
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get the user's level change history.
+    
+    Shows past level changes with context about what triggered each change.
+    """
+    # Get profile
+    result = await db.execute(
+        select(UserProficiencyProfile)
+        .where(UserProficiencyProfile.user_id == current_user.id)
+    )
+    profile = result.scalar_one_or_none()
+    
+    if not profile:
+        return {"history": []}
+    
+    # Get level history
+    history_result = await db.execute(
+        select(UserLevelHistory)
+        .where(UserLevelHistory.profile_id == profile.id)
+        .order_by(UserLevelHistory.triggered_at.desc())
+        .limit(limit)
+    )
+    history = history_result.scalars().all()
+    
+    return {
+        "current_level": profile.assessed_level,
+        "history": [
+            {
+                "previous_level": h.previous_level,
+                "new_level": h.new_level,
+                "change_type": h.change_type,
+                "reason": h.reason,
+                "overall_score": h.overall_score,
+                "accuracy": h.accuracy,
+                "triggered_at": h.triggered_at.isoformat() if h.triggered_at else None,
+            }
+            for h in history
+        ],
+    }
+
+
+# =====================
+# Placement Test Endpoints
+# =====================
+
+@router.get("/placement-test", response_model=dict)
+async def get_placement_test(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get placement test questions (20 questions, A1-C2).
+
+    Returns shuffled questions **without** the correct answer index.
+    """
+    questions_out = []
+    for q in PLACEMENT_QUESTIONS:
+        questions_out.append({
+            "id": q["id"],
+            "level": q["level"],
+            "points": q["points"],
+            "skill": q["skill"],
+            "question": q["question"],
+            "options": q["options"],
+        })
+
+    return {
+        "total_questions": len(questions_out),
+        "max_score": MAX_PLACEMENT_SCORE,
+        "questions": questions_out,
+    }
+
+
+@router.post("/placement-test/submit", response_model=dict)
+async def submit_placement_test(
+    submission: PlacementSubmission,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Submit placement test answers and receive assessed CEFR level.
+
+    - Scores each answer
+    - Determines proficiency level from total score percentage
+    - Updates user's proficiency profile and user record
+    - Updates rank based on new proficiency
+    """
+    # Build lookup
+    q_map = {q["id"]: q for q in PLACEMENT_QUESTIONS}
+
+    total_score = 0
+    correct_count = 0
+    details: List[Dict[str, Any]] = []
+
+    for ans in submission.answers:
+        q = q_map.get(ans.question_id)
+        if not q:
+            continue
+        is_correct = ans.selected_option == q["correct"]
+        earned = q["points"] if is_correct else 0
+        total_score += earned
+        if is_correct:
+            correct_count += 1
+        details.append({
+            "question_id": q["id"],
+            "correct": is_correct,
+            "points_earned": earned,
+        })
+
+    # Determine level
+    pct = (total_score / MAX_PLACEMENT_SCORE * 100) if MAX_PLACEMENT_SCORE else 0
+    assessed_level = "A1"
+    for threshold_pct, level in PLACEMENT_LEVEL_THRESHOLDS:
+        if pct >= threshold_pct:
+            assessed_level = level
+            break
+
+    # Persist to proficiency profile (upsert)
+    result = await db.execute(
+        select(UserProficiencyProfile).where(
+            UserProficiencyProfile.user_id == current_user.id
+        )
+    )
+    profile = result.scalar_one_or_none()
+
+    old_level = current_user.level or "A1"
+    level_changed = old_level != assessed_level
+
+    now = datetime.now(timezone.utc)
+
+    if profile:
+        profile.assessed_level = assessed_level
+        profile.last_assessment_at = now
+    else:
+        profile = UserProficiencyProfile(
+            user_id=current_user.id,
+            assessed_level=assessed_level,
+            last_assessment_at=now,
+        )
+        db.add(profile)
+
+    # The test's own percentage belongs to the test record, not to
+    # profile.overall_score: that field is the weighted skill total, and
+    # overwriting it with "% of placement questions correct" made the two
+    # numbers mean different things depending on which ran last. The level
+    # assessed here still steers everything downstream, because
+    # calculate_skill_score starts an unmeasured skill from this level's floor.
+    db.add(
+        LevelAssessmentTest(
+            user_id=current_user.id,
+            test_type="initial",
+            assessed_level=assessed_level,
+            overall_score=round(pct, 2),
+            skill_scores={},
+            questions_count=len(PLACEMENT_QUESTIONS),
+            correct_count=correct_count,
+            started_at=now,
+            completed_at=now,
+            level_changed=level_changed,
+        )
+    )
+
+    # Update user record
+    current_user.level = assessed_level
+
+    # Recalculate rank with new proficiency
+    new_rank = calculate_rank(
+        numeric_level=current_user.numeric_level or 1,
+        proficiency_level=assessed_level,
+    )
+    apply_rank_info_to_user(current_user, new_rank)
+
+    await db.commit()
+    await invalidate_learner_card(current_user.id)
+
+    return {
+        "assessed_level": assessed_level,
+        "total_score": total_score,
+        "max_score": MAX_PLACEMENT_SCORE,
+        "score_percentage": round(pct, 1),
+        "correct_count": correct_count,
+        "total_questions": len(PLACEMENT_QUESTIONS),
+        "level_changed": level_changed,
+        "previous_level": old_level,
+        "rank": new_rank.rank.value,
+        "rank_name": new_rank.name,
+        "details": details,
+    }
+
+
+@router.post("/exam-gated/submit", response_model=ExamGatedProgressionResponse)
+async def submit_exam_gated_progression(
+    payload: ExamGatedProgressionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Skeleton endpoint for CEFR exam-gated progression.
+
+    Rules implemented in ProficiencyService:
+    - must pass exam at threshold,
+    - exam tier must be current tier or higher,
+    - promotion is at most one CEFR tier.
+    """
+    # Ensure profile exists.
+    profile_result = await db.execute(
+        select(UserProficiencyProfile).where(UserProficiencyProfile.user_id == current_user.id)
+    )
+    profile = profile_result.scalar_one_or_none()
+    if profile is None:
+        profile = UserProficiencyProfile(
+            user_id=current_user.id,
+            assessed_level=(current_user.level or "A1").upper(),
+        )
+        db.add(profile)
+        await db.commit()
+        await db.refresh(profile)
+
+    previous_level = ProficiencyLevel((profile.assessed_level or current_user.level or "A1").upper())
+    new_level, decision = ProficiencyService.apply_exam_gated_promotion(
+        current_level=previous_level,
+        exam_level=payload.exam_level,
+        passed=payload.passed,
+        score=payload.score,
+        passing_score=payload.passing_score,
+    )
+
+    promoted = bool(decision.get("promoted")) and new_level != previous_level
+
+    if promoted:
+        profile.assessed_level = new_level.value
+        profile.last_level_change_at = datetime.now(timezone.utc)
+        profile.last_assessment_at = datetime.now(timezone.utc)
+
+        # Keep compatibility field in users table aligned.
+        current_user.level = new_level.value
+
+        # Keep rank compatibility in sync.
+        rank_info = calculate_rank(
+            numeric_level=current_user.numeric_level or 1,
+            proficiency_level=current_user.level,
+        )
+        apply_rank_info_to_user(current_user, rank_info)
+
+        history = UserLevelHistory(
+            profile_id=profile.id,
+            previous_level=previous_level.value,
+            new_level=new_level.value,
+            change_type="promotion",
+            reason=f"Exam-gated progression via {payload.exam_source or 'assessment'}",
+            overall_score=profile.overall_score or 0.0,
+            skill_scores_snapshot={},
+            exercises_completed=profile.total_exercises_completed or 0,
+            accuracy=profile.accuracy,
+        )
+        db.add(history)
+        await db.commit()
+        await db.refresh(profile)
+        await invalidate_learner_card(current_user.id)
+
+    return ExamGatedProgressionResponse(
+        previous_level=previous_level,
+        current_level=new_level,
+        promoted=promoted,
+        promoted_to=new_level if promoted else None,
+        eligible=bool(decision.get("eligible")),
+        reason=str(decision.get("reason")),
+        exam_level=payload.exam_level,
+        passed=payload.passed,
+        score=payload.score,
+        passing_score=payload.passing_score,
+    )

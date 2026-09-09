@@ -1,0 +1,166 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../utils/constants.dart';
+
+/// Centralized API configuration sourced from .env with safe defaults.
+///
+/// PRIMARY URL: từ env (local khi dev, production khi prod)
+/// FALLBACK URL: thử khi primary không reach được (network error)
+///
+/// Fallback pattern trong DioClient:
+///   1. Gọi với baseUrl = ApiConfig.baseUrl
+///   2. Nếu DioException.type == connectionError → retry với ApiConfig.fallbackBaseUrl
+///   3. Nếu fallbackBaseUrl rỗng hoặc cũng fail → throw exception
+class ApiConfig {
+  // ── Environment ─────────────────────────────────────────────────────────────
+
+  static String get environment =>
+      _readEnv('ENVIRONMENT')?.trim() ?? 'development';
+
+  static bool get isDev => environment == 'development';
+  static bool get isProd => environment == 'production';
+
+  static bool get enableDuplexVoice =>
+      _readEnv('VOICE_DUPLEX_ENABLED')?.trim().toLowerCase() == 'true';
+
+  /// Starter rewards require backend routes and a database migration.
+  /// Production must opt in only after those dependencies are deployed.
+  static bool get enableStarterReward {
+    final configured = _readEnv('ENABLE_STARTER_REWARD')?.trim().toLowerCase();
+    if (configured != null && configured.isNotEmpty) {
+      return configured == 'true' || configured == '1' || configured == 'yes';
+    }
+    return !isProd;
+  }
+
+  // ── Backend URL ─────────────────────────────────────────────────────────────
+
+  /// URL chính — local (dev) hoặc Render.com (prod).
+  static String get baseUrl {
+    final envUrl = _normalizedEnvUrl('API_BASE_URL');
+    if (envUrl != null) {
+      if (_mustUseProductionBackend && _isTransientFallbackUrl(envUrl)) {
+        throw StateError(
+          'API_BASE_URL must point to an owned production endpoint.',
+        );
+      }
+      if (!_mustUseProductionBackend || !_isLoopbackUrl(envUrl)) {
+        return envUrl;
+      }
+    }
+    if (_shouldUseLocalFallback) return AppConstants.localApiBaseUrl;
+    throw StateError('API_BASE_URL is required for this build.');
+  }
+
+  /// Host root, without the `/api/v1` suffix.
+  ///
+  /// Uploaded media (`/media/...`) is served by the backend at the host root,
+  /// not under the versioned API prefix, so joining it to [baseUrl] gives a
+  /// 404 that looks like a missing file.
+  static String get mediaBaseUrl {
+    final base = baseUrl;
+    final marker = '/api/v1';
+    return base.endsWith(marker)
+        ? base.substring(0, base.length - marker.length)
+        : base;
+  }
+
+  /// URL dự phòng — thử khi [baseUrl] không kết nối được.
+  /// Trống trong production mode (không có fallback về local).
+  static String get fallbackBaseUrl {
+    if (_mustUseProductionBackend) {
+      return ''; // production không fallback về local
+    }
+    final envUrl = _normalizedEnvUrl('API_BASE_URL_FALLBACK');
+    return envUrl ?? '';
+  }
+
+  // ── AI Service URL ───────────────────────────────────────────────────────────
+
+  /// AIS URL chính.
+  static String get aiServiceUrl {
+    final envUrl = _normalizedEnvUrl('AI_SERVICE_URL');
+    if (envUrl != null) {
+      if (_mustUseProductionBackend && _isTransientFallbackUrl(envUrl)) {
+        throw StateError(
+          'AI_SERVICE_URL must point to an owned production endpoint.',
+        );
+      }
+      if (!_mustUseProductionBackend || !_isLoopbackUrl(envUrl)) {
+        return envUrl;
+      }
+    }
+    if (_shouldUseLocalFallback) return AppConstants.localAiServiceUrl;
+    throw StateError('AI_SERVICE_URL is required for this build.');
+  }
+
+  /// AIS URL dự phòng.
+  static String get fallbackAiServiceUrl {
+    if (_mustUseProductionBackend) return '';
+    final envUrl = _normalizedEnvUrl('AI_SERVICE_URL_FALLBACK');
+    return envUrl ?? '';
+  }
+
+  // ── Timeouts ─────────────────────────────────────────────────────────────────
+
+  static Duration get connectTimeout => AppConstants.connectTimeout;
+  static Duration get receiveTimeout => AppConstants.receiveTimeout;
+
+  // ── Internals ────────────────────────────────────────────────────────────────
+
+  static String? _normalizedEnvUrl(String key) {
+    final envUrl = _readEnv(key)?.trim();
+    if (envUrl == null || envUrl.isEmpty) return null;
+    final normalized = envUrl.endsWith('/')
+        ? envUrl.substring(0, envUrl.length - 1)
+        : envUrl;
+
+    // Force IPv4 loopback for localhost to avoid IPv6 routing to unrelated listeners.
+    if (normalized.contains('://localhost')) {
+      return normalized.replaceFirst('://localhost', '://127.0.0.1');
+    }
+
+    return normalized;
+  }
+
+  static bool get _shouldUseLocalFallback =>
+      isDev && !_mustUseProductionBackend;
+
+  static bool get _mustUseProductionBackend {
+    if (kReleaseMode) return true;
+    if (_readEnv('DEBUG_MODE') == 'false') return true;
+    final host = Uri.base.host.toLowerCase();
+    return host.isNotEmpty && !_isLoopbackHost(host);
+  }
+
+  static bool _isLoopbackUrl(String value) {
+    try {
+      final uri = Uri.parse(value);
+      return _isLoopbackHost(uri.host.toLowerCase());
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static bool _isLoopbackHost(String host) {
+    return host == 'localhost' ||
+        host == '127.0.0.1' ||
+        host == '0.0.0.0' ||
+        host == '::1';
+  }
+
+  static bool _isTransientFallbackUrl(String value) {
+    try {
+      final host = Uri.parse(value).host.toLowerCase();
+      return host.endsWith('.onrender.com') ||
+          host.endsWith('.trycloudflare.com');
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static String? _readEnv(String key) {
+    if (!dotenv.isInitialized) return null;
+    return dotenv.env[key];
+  }
+}

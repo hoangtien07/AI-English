@@ -1,0 +1,142 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+node_modules/
+packages/
+pubspec.lock
+test_output/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
+.metadata
+template/
+assets/icon-library/
+
+# pubspec.lock is intentionally tracked for apps (not libraries) to ensure
+# reproducible CI builds with the same package versions as local development.
+.packages
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Firebase & Sensitive Data - BẢO VỆ DỮ LIỆU CÁ NHÂN
+google-services.json
+GoogleService-Info.plist
+firebase_options.dart
+firebase_app_id_file.json
+.firebaserc
+firebase-debug.log
+firestore-debug.log
+
+# Environment & API Keys
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+*.p12
+*.keystore
+key.properties
+keystore.properties
+
+# iOS Specific
+**/ios/Pods/
+**/ios/Podfile.lock
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/.symlinks/
+**/ios/Runner.xcworkspace/xcshareddata/
+**/ios/ServiceDefinitions.json
+**/ios/Runner/GoogleService-Info.plist
+
+# macOS Specific
+**/macos/Pods/
+**/macos/Podfile.lock
+**/macos/Flutter/ephemeral/
+**/macos/.symlinks/
+
+# Android Specific
+**/android/local.properties
+**/android/app/google-services.json
+**/android/key.properties
+**/android/app/*.jks
+**/android/app/*.keystore
+**/android/.gradle/
+**/android/captures/
+**/android/gradlew
+**/android/gradlew.bat
+**/android/gradle/wrapper/gradle-wrapper.jar
+
+# Web Specific
+**/web/.firebase/
+
+# Database Files
+*.db
+*.sqlite
+*.sqlite3
+*.realm
+
+# Logs and Temporary Files
+*.tmp
+*.temp
+*~
+*.bak
+*.backup
+.venv/bin/
+
+# logs
+logs/
+*.log
+*.log.*
+
+# firebase
+firebase-debug.log
+.vercel
+.env*.local
+GoogleService-Info.plist
+
+# Keep tracked Firebase options wrapper (contains public config, not private keys)
+!lib/firebase_options.dart
+
+# coverage
+coverage/
+
+# Google OAuth client plist
+client_*.plist
+

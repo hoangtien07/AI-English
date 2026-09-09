@@ -1,0 +1,183 @@
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+*.DS_Store
+
+# Local Redis snapshot (created by running redis-server for local dev/testing)
+dump.rdb
+
+# Sensitive files - NEVER commit these!
+# Firebase credentials
+**/firebase_options.dart
+**/google-services.json
+**/GoogleService-Info.plist
+# Environment variables
+.env
+.env.local
+.env.*.local
+# AWS credentials
+**/.aws/
+**/credentials
+# API keys
+**/secrets.yaml
+**/secrets.json
+
+# Build outputs
+build/
+.gradle/
+.cxx/
+.externalNativeBuild/
+/local.properties
+
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.metadata
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+!flutter-app/assets/env/
+!flutter-app/assets/env/*
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs
+*.log
+*.hprof
+logs/
+*.log.*
+
+# Process IDs
+.pids/
+*.pid
+
+# Other
+*.orig
+*.rej
+*.swp
+
+# Firebase & Google Services - SENSITIVE DATA
+**/google-services.json
+**/GoogleService-Info.plist
+**/firebase_options.dart
+**/*firebase-adminsdk*.json
+flutter-app/lexilingo-88492-firebase-adminsdk-fbsvc-aa6640bef2.json
+
+# Keep template files
+!**/google-services.json.example
+!**/GoogleService-Info.plist.example
+!**/firebase_options.dart.example
+!flutter-app/lib/firebase_options.dart
+
+# Documentation generated outside the model-development repository
+docs/cmd
+
+
+# Environment variables
+.env
+*.env
+.env.*
+**/.env.firebase.local
+!.env.example
+.env.production
+!.env.production.example
+.env.production.secrets
+.env.production.secrets.*
+
+# AI Models (too large for git)
+**/models/whisper/*.pt
+**/models/hubert/*.pt
+**/models/piper/*.onnx
+**/models/piper/*.onnx.json
+**/models/moonshine/
+**/models/embeddings/*.bin
+
+# Database backups and temporary files
+*.bak
+*.sqlite3.bak
+**/data/*.bak
+**/data/kuzu_db/
+**/api/data/
+
+# Logs and temporary files
+logs/*.txt
+temp/
+tmp/
+*_log.txtsha256-*
+
+# agent skills (not needed in version control)
+agent-skills
+.vercel
+.agents
+.gemini
+.superpowers
+system-testing/
+
+
+# deployment artifacts
+dist/
+build/
+*.tsbuildinfo
+admin-service/src/tailwind-utilities.generated.css
+.deploy/
+backups/
+
+# Runtime-generated knowledge graph sync metadata
+**/data/*_synced_files.json
+
+# gateway runtime security logs
+gateway/nginx/logs/*.log
+default.conf
+scripts/extracted_media
+
+# Large Anki export artifacts
+*.apkg
+*.anki2
+*.colpkg
+
+# Root scripts data pipeline outputs and logs (tracked scripts are preserved)
+/scripts/data-pipeline/*/
+/scripts/data-pipeline/*.json
+/scripts/data-pipeline/*.txt
+/scripts/data-pipeline/*.log
+
+
+.understand-anything/
+
+# Claude Code worktrees (temporary agent workspaces)
+.claude/worktrees/
+
+# Local tool caches
+.claude/
+.claire/
+.crawl4ai/
+ai-service/.crawl4ai/
+# Sensitive learner-state migration/load artifacts
+**/mastery*.jsonl
+**/mastery*.manifest.json
+**/learner-state-*.csv
+**/learner-state-*.html
+**/checkpoint*.json
+**/quarantine*.jsonl
+
+# Built LaTeX output of docs/technical-report (Makefile target, plus its `make cp` copy)
+docs/technical-report/*.pdf
+docs/technical-report/*.aux
+docs/technical-report/*.log
+docs/technical-report/*.toc
+docs/technical-report/*.out

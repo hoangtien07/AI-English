@@ -1,0 +1,533 @@
+// ignore_for_file: constant_identifier_names
+/// Story models for Topic-Based Conversation
+/// Defines story/topic data structures for language learning scenarios
+library;
+
+// DifficultyLevel is a domain concept owned by domain/entities/story.dart.
+// Re-exported here so existing callers of this model file keep working
+// without each needing to import the entity file directly.
+import '../../domain/entities/story.dart' show DifficultyLevel;
+export '../../domain/entities/story.dart' show DifficultyLevel;
+import '../../domain/entities/story.dart' as entities;
+
+/// Localized title with Vietnamese and English
+class LocalizedTitle {
+  final String vi;
+  final String en;
+
+  const LocalizedTitle({required this.vi, required this.en});
+
+  factory LocalizedTitle.fromJson(Map<String, dynamic> json) {
+    return LocalizedTitle(
+      vi: json['vi'] as String? ?? '',
+      en: json['en'] as String? ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {'vi': vi, 'en': en};
+}
+
+/// Vocabulary item for learning
+class VocabularyItem {
+  final String term;
+  final String definition;
+  final String exampleInStory;
+  final String partOfSpeech;
+  final String? phonetic;
+
+  const VocabularyItem({
+    required this.term,
+    required this.definition,
+    this.exampleInStory = '',
+    this.partOfSpeech = '',
+    this.phonetic,
+  });
+
+  factory VocabularyItem.fromJson(Map<String, dynamic> json) {
+    return VocabularyItem(
+      term: json['term'] as String? ?? json['word'] as String? ?? '',
+      definition:
+          json['definition'] as String? ?? json['meaning'] as String? ?? '',
+      exampleInStory:
+          json['example_in_story'] as String? ??
+          json['exampleInStory'] as String? ??
+          '',
+      partOfSpeech:
+          json['part_of_speech'] as String? ??
+          json['partOfSpeech'] as String? ??
+          '',
+      phonetic: json['phonetic'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'term': term,
+    'definition': definition,
+    'example_in_story': exampleInStory,
+    'part_of_speech': partOfSpeech,
+    'phonetic': phonetic,
+  };
+}
+
+/// Grammar point for learning
+class GrammarPoint {
+  final String grammarStructure;
+  final String explanation;
+  final String usageInStory;
+  final List<String> examples;
+
+  const GrammarPoint({
+    required this.grammarStructure,
+    required this.explanation,
+    this.usageInStory = '',
+    this.examples = const [],
+  });
+
+  factory GrammarPoint.fromJson(Map<String, dynamic> json) {
+    return GrammarPoint(
+      grammarStructure:
+          json['grammar_structure'] as String? ??
+          json['grammarStructure'] as String? ??
+          json['pattern'] as String? ??
+          '',
+      explanation: json['explanation'] as String? ?? '',
+      usageInStory:
+          json['usage_in_story'] as String? ??
+          json['usageInStory'] as String? ??
+          '',
+      examples:
+          (json['examples'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'grammar_structure': grammarStructure,
+    'explanation': explanation,
+    'usage_in_story': usageInStory,
+    'examples': examples,
+  };
+}
+
+/// Role persona for conversation
+class RolePersona {
+  final String name;
+  final String role;
+  final String personality;
+  final String speakingStyle;
+  final String background;
+
+  const RolePersona({
+    required this.name,
+    required this.role,
+    required this.personality,
+    required this.speakingStyle,
+    required this.background,
+  });
+
+  factory RolePersona.fromJson(Map<String, dynamic> json) {
+    return RolePersona(
+      name: json['name'] as String? ?? '',
+      role: json['role'] as String? ?? json['description'] as String? ?? '',
+      personality: json['personality'] as String? ?? '',
+      speakingStyle:
+          json['speaking_style'] as String? ??
+          json['speakingStyle'] as String? ??
+          json['language_style'] as String? ??
+          '',
+      background: json['background'] as String? ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'role': role,
+    'personality': personality,
+    'speaking_style': speakingStyle,
+    'background': background,
+  };
+}
+
+/// Context description for story
+class ContextDescription {
+  final String setting;
+  final String scenario;
+  final List<String> objectives;
+
+  const ContextDescription({
+    required this.setting,
+    required this.scenario,
+    this.objectives = const [],
+  });
+
+  factory ContextDescription.fromJson(Map<String, dynamic> json) {
+    return ContextDescription(
+      setting: json['setting'] as String? ?? '',
+      scenario:
+          json['scenario'] as String? ?? json['situation'] as String? ?? '',
+      objectives:
+          (json['objectives'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'setting': setting,
+    'scenario': scenario,
+    'objectives': objectives,
+  };
+}
+
+/// Conversation flow guidance
+class ConversationFlow {
+  final String openingPrompt;
+  final List<String> keyMilestones;
+  final List<String> closingScenarios;
+
+  const ConversationFlow({
+    required this.openingPrompt,
+    this.keyMilestones = const [],
+    this.closingScenarios = const [],
+  });
+
+  factory ConversationFlow.fromJson(Map<String, dynamic> json) {
+    return ConversationFlow(
+      openingPrompt:
+          json['opening_prompt'] as String? ??
+          json['openingPrompt'] as String? ??
+          json['suggested_opening'] as String? ??
+          '',
+      keyMilestones:
+          (json['key_milestones'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          (json['keyMilestones'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
+      closingScenarios:
+          (json['closing_scenarios'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          (json['closingScenarios'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'opening_prompt': openingPrompt,
+    'key_milestones': keyMilestones,
+    'closing_scenarios': closingScenarios,
+  };
+}
+
+/// Full story detail
+class Story {
+  final String storyId;
+  final LocalizedTitle title;
+  final DifficultyLevel difficultyLevel;
+  final String category;
+  final int estimatedMinutes;
+  final String? iconKey;
+  final String? coverImageUrl;
+  final ContextDescription contextDescription;
+  final RolePersona rolePersona;
+  final List<VocabularyItem> vocabularyList;
+  final List<GrammarPoint> grammarPoints;
+  final ConversationFlow conversationFlow;
+  final bool isPublished;
+  final List<String> suggestedPrompts;
+  final List<String> tags;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  const Story({
+    required this.storyId,
+    required this.title,
+    required this.difficultyLevel,
+    required this.category,
+    this.estimatedMinutes = 15,
+    this.iconKey,
+    this.coverImageUrl,
+    required this.contextDescription,
+    required this.rolePersona,
+    this.vocabularyList = const [],
+    this.grammarPoints = const [],
+    required this.conversationFlow,
+    this.isPublished = true,
+    this.suggestedPrompts = const [],
+    this.tags = const [],
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  factory Story.fromJson(Map<String, dynamic> json) {
+    return Story(
+      storyId: json['story_id'] as String? ?? json['id'] as String? ?? '',
+      title: json['title'] is Map
+          ? LocalizedTitle.fromJson(json['title'] as Map<String, dynamic>)
+          : LocalizedTitle(vi: '', en: json['title']?.toString() ?? ''),
+      category: json['category'] as String? ?? '',
+      difficultyLevel: DifficultyLevel.fromString(
+        json['difficulty_level'] as String? ?? json['difficulty'] as String?,
+      ),
+      estimatedMinutes:
+          json['estimated_minutes'] as int? ??
+          json['estimatedMinutes'] as int? ??
+          15,
+      iconKey: json['icon_key'] as String? ?? json['iconKey'] as String?,
+      coverImageUrl:
+          json['cover_image_url'] as String? ??
+          json['coverImageUrl'] as String?,
+      contextDescription: json['context_description'] != null
+          ? ContextDescription.fromJson(
+              json['context_description'] as Map<String, dynamic>,
+            )
+          : json['contextDescription'] != null
+          ? ContextDescription.fromJson(
+              json['contextDescription'] as Map<String, dynamic>,
+            )
+          : const ContextDescription(setting: '', scenario: ''),
+      rolePersona: json['role_persona'] != null
+          ? RolePersona.fromJson(json['role_persona'] as Map<String, dynamic>)
+          : json['rolePersona'] != null
+          ? RolePersona.fromJson(json['rolePersona'] as Map<String, dynamic>)
+          : const RolePersona(
+              name: '',
+              role: '',
+              personality: '',
+              speakingStyle: '',
+              background: '',
+            ),
+      vocabularyList:
+          (json['vocabulary_list'] as List<dynamic>?)
+              ?.map((e) => VocabularyItem.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          (json['vocabularyList'] as List<dynamic>?)
+              ?.map((e) => VocabularyItem.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+      grammarPoints:
+          (json['grammar_points'] as List<dynamic>?)
+              ?.map((e) => GrammarPoint.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          (json['grammarPoints'] as List<dynamic>?)
+              ?.map((e) => GrammarPoint.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+      conversationFlow: json['conversation_flow'] != null
+          ? ConversationFlow.fromJson(
+              json['conversation_flow'] as Map<String, dynamic>,
+            )
+          : json['conversationFlow'] != null
+          ? ConversationFlow.fromJson(
+              json['conversationFlow'] as Map<String, dynamic>,
+            )
+          : const ConversationFlow(openingPrompt: ''),
+      isPublished:
+          json['is_published'] as bool? ?? json['isPublished'] as bool? ?? true,
+      suggestedPrompts:
+          (json['suggested_prompts'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          (json['suggestedPrompts'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
+      tags:
+          (json['tags'] as List<dynamic>?)?.map((e) => e.toString()).toList() ??
+          [],
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at'].toString())
+          : null,
+      updatedAt: json['updated_at'] != null
+          ? DateTime.tryParse(json['updated_at'].toString())
+          : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'story_id': storyId,
+    'title': title.toJson(),
+    'category': category,
+    'difficulty_level': difficultyLevel.code,
+    'estimated_minutes': estimatedMinutes,
+    'icon_key': iconKey,
+    'cover_image_url': coverImageUrl,
+    'context_description': contextDescription.toJson(),
+    'role_persona': rolePersona.toJson(),
+    'vocabulary_list': vocabularyList.map((v) => v.toJson()).toList(),
+    'grammar_points': grammarPoints.map((g) => g.toJson()).toList(),
+    'conversation_flow': conversationFlow.toJson(),
+    'is_published': isPublished,
+    'suggested_prompts': suggestedPrompts,
+    'tags': tags,
+  };
+}
+
+/// Story list item for display in story selection
+class StoryListItem {
+  final String storyId;
+  final LocalizedTitle title;
+  final DifficultyLevel difficultyLevel;
+  final String category;
+  final int estimatedMinutes;
+  final String? iconKey;
+  final String? coverImageUrl;
+  final List<String> suggestedPrompts;
+  final List<String> tags;
+
+  const StoryListItem({
+    required this.storyId,
+    required this.title,
+    required this.difficultyLevel,
+    required this.category,
+    this.estimatedMinutes = 15,
+    this.iconKey,
+    this.coverImageUrl,
+    this.suggestedPrompts = const [],
+    this.tags = const [],
+  });
+
+  factory StoryListItem.fromJson(Map<String, dynamic> json) {
+    return StoryListItem(
+      storyId: json['story_id'] as String? ?? json['id'] as String? ?? '',
+      title: json['title'] is Map
+          ? LocalizedTitle.fromJson(json['title'] as Map<String, dynamic>)
+          : LocalizedTitle(vi: '', en: json['title']?.toString() ?? ''),
+      category: json['category'] as String? ?? '',
+      difficultyLevel: DifficultyLevel.fromString(
+        json['difficulty_level'] as String? ?? json['difficulty'] as String?,
+      ),
+      estimatedMinutes:
+          json['estimated_minutes'] as int? ??
+          json['estimatedMinutes'] as int? ??
+          15,
+      iconKey: json['icon_key'] as String? ?? json['iconKey'] as String?,
+      coverImageUrl:
+          json['cover_image_url'] as String? ??
+          json['coverImageUrl'] as String?,
+      suggestedPrompts:
+          (json['suggested_prompts'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          (json['suggestedPrompts'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
+      tags:
+          (json['tags'] as List<dynamic>?)?.map((e) => e.toString()).toList() ??
+          [],
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'story_id': storyId,
+    'title': title.toJson(),
+    'category': category,
+    'difficulty_level': difficultyLevel.code,
+    'estimated_minutes': estimatedMinutes,
+    'icon_key': iconKey,
+    'cover_image_url': coverImageUrl,
+    'suggested_prompts': suggestedPrompts,
+    'tags': tags,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Domain entity mappers — convert wire-format models into the pure domain
+// entities defined in domain/entities/story.dart, used at the repository
+// boundary so domain/presentation never depend on these JSON-aware models.
+// ---------------------------------------------------------------------------
+
+extension LocalizedTitleToEntity on LocalizedTitle {
+  entities.LocalizedTitle toEntity() =>
+      entities.LocalizedTitle(vi: vi, en: en);
+}
+
+extension VocabularyItemToEntity on VocabularyItem {
+  entities.VocabularyItem toEntity() => entities.VocabularyItem(
+    term: term,
+    definition: definition,
+    exampleInStory: exampleInStory,
+    partOfSpeech: partOfSpeech,
+    phonetic: phonetic,
+  );
+}
+
+extension GrammarPointToEntity on GrammarPoint {
+  entities.GrammarPoint toEntity() => entities.GrammarPoint(
+    grammarStructure: grammarStructure,
+    explanation: explanation,
+    usageInStory: usageInStory,
+    examples: examples,
+  );
+}
+
+extension RolePersonaToEntity on RolePersona {
+  entities.RolePersona toEntity() => entities.RolePersona(
+    name: name,
+    role: role,
+    personality: personality,
+    speakingStyle: speakingStyle,
+    background: background,
+  );
+}
+
+extension ContextDescriptionToEntity on ContextDescription {
+  entities.ContextDescription toEntity() => entities.ContextDescription(
+    setting: setting,
+    scenario: scenario,
+    objectives: objectives,
+  );
+}
+
+extension ConversationFlowToEntity on ConversationFlow {
+  entities.ConversationFlow toEntity() => entities.ConversationFlow(
+    openingPrompt: openingPrompt,
+    keyMilestones: keyMilestones,
+    closingScenarios: closingScenarios,
+  );
+}
+
+extension StoryToEntity on Story {
+  entities.Story toEntity() => entities.Story(
+    storyId: storyId,
+    title: title.toEntity(),
+    difficultyLevel: difficultyLevel,
+    category: category,
+    estimatedMinutes: estimatedMinutes,
+    iconKey: iconKey,
+    coverImageUrl: coverImageUrl,
+    contextDescription: contextDescription.toEntity(),
+    rolePersona: rolePersona.toEntity(),
+    vocabularyList: vocabularyList.map((v) => v.toEntity()).toList(),
+    grammarPoints: grammarPoints.map((g) => g.toEntity()).toList(),
+    conversationFlow: conversationFlow.toEntity(),
+    isPublished: isPublished,
+    suggestedPrompts: suggestedPrompts,
+    tags: tags,
+    createdAt: createdAt,
+    updatedAt: updatedAt,
+  );
+}
+
+extension StoryListItemToEntity on StoryListItem {
+  entities.StoryListItem toEntity() => entities.StoryListItem(
+    storyId: storyId,
+    title: title.toEntity(),
+    difficultyLevel: difficultyLevel,
+    category: category,
+    estimatedMinutes: estimatedMinutes,
+    iconKey: iconKey,
+    coverImageUrl: coverImageUrl,
+    suggestedPrompts: suggestedPrompts,
+    tags: tags,
+  );
+}

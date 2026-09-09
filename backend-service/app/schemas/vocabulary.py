@@ -1,0 +1,291 @@
+"""
+Vocabulary Pydantic Schemas
+Phase 3: Request/Response models for vocabulary API
+"""
+
+import uuid
+from datetime import datetime
+from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+# ===== VocabularyItem Schemas =====
+
+# Prefixes that mark auto-generated / placeholder definitions that should not
+# be displayed as-is to end-users.
+_SEEDED_DEFINITION_PREFIXES = (
+    "Seeded from crawled",
+    "#N/A",
+)
+
+
+class VocabularyItemBase(BaseModel):
+    """Base vocabulary item schema"""
+    word: str = Field(..., max_length=255, description="The vocabulary word")
+    definition: str = Field(..., description="Definition in English")
+    translation: Optional[Dict[str, Any]] = Field(None, description="Translations and examples")
+    pronunciation: Optional[str] = Field(None, max_length=100, description="IPA pronunciation")
+    audio_url: Optional[str] = Field(None, max_length=500, description="Audio URL")
+    part_of_speech: str = Field(..., description="noun, verb, adjective, etc.")
+    difficulty_level: str = Field(..., description="A1, A2, B1, B2, C1, C2")
+    tags: Optional[List[str]] = Field(None, description="Tags for categorization")
+
+    @field_validator("definition", mode="before")
+    @classmethod
+    def clean_seeded_definition(cls, v: Any) -> Any:
+        """Replace auto-generated placeholder definitions with an empty string
+        so that consumers (mobile/web clients) can fall back to their own UI.
+        """
+        if isinstance(v, str) and v.startswith(_SEEDED_DEFINITION_PREFIXES):
+            return ""
+        return v
+
+
+class VocabularyItemCreate(VocabularyItemBase):
+    """Schema for creating vocabulary item"""
+    course_id: Optional[uuid.UUID] = None
+    lesson_id: Optional[uuid.UUID] = None
+
+
+class VocabularyItemResponse(VocabularyItemBase):
+    """Schema for vocabulary item response"""
+    id: uuid.UUID
+    course_id: Optional[uuid.UUID]
+    lesson_id: Optional[uuid.UUID]
+    usage_frequency: int
+    created_at: datetime
+    updated_at: datetime
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ===== UserVocabulary Schemas =====
+
+class UserVocabularyBase(BaseModel):
+    """Base user vocabulary schema"""
+    vocabulary_id: uuid.UUID
+
+
+class UserVocabularyCreate(UserVocabularyBase):
+    """Schema for adding vocabulary to collection"""
+    pass
+
+
+class UserVocabularyResponse(BaseModel):
+    """
+    Schema for user vocabulary response (with SRS data).
+    Includes the actual vocabulary item data.
+    """
+    id: uuid.UUID
+    user_id: uuid.UUID
+    vocabulary_id: uuid.UUID
+    status: str
+    
+    # SRS data
+    ease_factor: float
+    interval: int
+    repetitions: int
+    next_review_date: datetime
+    last_reviewed_at: Optional[datetime]
+
+    # FSRS data
+    fsrs_stability: Optional[float] = 0.0
+    fsrs_difficulty: Optional[float] = 0.0
+    fsrs_elapsed_days: Optional[int] = 0
+    fsrs_scheduled_days: Optional[int] = 0
+    fsrs_reps: Optional[int] = 0
+    fsrs_lapses: Optional[int] = 0
+    fsrs_state: Optional[int] = 0
+    fsrs_last_review: Optional[datetime] = None
+    
+    # Statistics
+    total_reviews: int
+    correct_reviews: int
+    streak: int
+    longest_streak: int
+    total_xp_earned: int
+    
+    # Metadata
+    notes: Optional[str]
+    added_at: datetime
+    
+    # Computed properties
+    is_due: bool = Field(default=False, description="Whether review is due")
+    accuracy: float = Field(default=0.0, description="Accuracy percentage")
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserVocabularyWithItem(UserVocabularyResponse):
+    """User vocabulary with full vocabulary item details"""
+    vocabulary: VocabularyItemResponse
+
+
+class UserVocabularyListResponse(BaseModel):
+    """Paginated vocabulary list response"""
+    items: List[UserVocabularyWithItem]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+
+
+class QuickSaveVocabularyRequest(BaseModel):
+    """Request payload for quick-saving a word from app surfaces."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    word: str = Field(..., min_length=1, max_length=255)
+    source_type: Optional[str] = Field(None, max_length=50)
+    source_reference: Optional[str] = Field(None, max_length=255)
+    context_sentence: Optional[str] = Field(None, max_length=1200)
+    definition: Optional[str] = Field(None, max_length=2000)
+    translation: Optional[str] = Field(None, max_length=255)
+    part_of_speech: Optional[str] = Field("noun", max_length=32)
+    difficulty_level: Optional[str] = Field("A1", max_length=2)
+
+    @field_validator("difficulty_level")
+    @classmethod
+    def normalize_difficulty_level(cls, v: Optional[str]) -> Optional[str]:
+        return v.upper() if isinstance(v, str) else v
+
+    @field_validator("part_of_speech")
+    @classmethod
+    def normalize_part_of_speech(cls, v: Optional[str]) -> Optional[str]:
+        return v.lower() if isinstance(v, str) else v
+
+
+class QuickSaveVocabularyResponse(BaseModel):
+    """Response payload for quick-save operation."""
+
+    user_vocabulary: UserVocabularyResponse
+    vocabulary: VocabularyItemResponse
+    created_new_item: bool
+    already_in_collection: bool
+    normalized_word: str
+
+
+# ===== Review Schemas =====
+
+class ReviewSubmission(BaseModel):
+    """Schema for submitting a vocabulary review"""
+    quality: int = Field(..., ge=0, le=5, description="Quality rating (0-5)")
+    time_spent_ms: int = Field(default=0, ge=0, description="Time spent in milliseconds")
+    
+    @field_validator("quality")
+    @classmethod
+    def validate_quality(cls, v):
+        """Ensure quality is in valid range"""
+        if not 0 <= v <= 5:
+            raise ValueError("Quality must be between 0 and 5")
+        return v
+
+
+class ReviewResponse(BaseModel):
+    """Schema for review submission response"""
+    user_vocabulary: UserVocabularyResponse
+    xp_awarded: int
+    streak_bonus: bool
+    next_review_in_days: int
+    message: str
+
+
+class PronunciationEvaluationResponse(BaseModel):
+    """Response for vocabulary pronunciation evaluation."""
+
+    vocabulary_id: uuid.UUID
+    target_word: str
+    score: float
+    stars: int
+    feedback_label: str
+    transcription: Optional[str] = None
+    phoneme_scores: Dict[str, float] = Field(default_factory=dict)
+    errors: List[Dict[str, Any]] = Field(default_factory=list)
+    duration_ms: Optional[float] = None
+
+
+class VocabularyReviewHistoryItem(BaseModel):
+    """Individual review record"""
+    id: uuid.UUID
+    quality: int
+    time_spent_ms: int
+    ease_factor_after: Optional[float]
+    interval_after: Optional[int]
+    reviewed_at: datetime
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ===== Due Vocabulary Schemas =====
+
+class DueVocabularyResponse(BaseModel):
+    """Response for due vocabulary endpoint"""
+    items: List[UserVocabularyWithItem]
+    total_due: int
+    daily_target: int = 20
+    progress_percentage: float
+
+
+# ===== Statistics Schemas =====
+
+class VocabularyStatsResponse(BaseModel):
+    """User vocabulary statistics"""
+    total: int
+    learning: int
+    reviewing: int
+    mastered: int
+    due_for_review: int
+    total_xp: int
+    best_streak: int
+
+
+# ===== Deck Schemas =====
+
+class VocabularyDeckBase(BaseModel):
+    """Base deck schema"""
+    name: str = Field(..., max_length=100, description="Deck name")
+    description: Optional[str] = Field(None, description="Deck description")
+    color: str = Field(default="#2196F3", max_length=7, description="Hex color code")
+    is_public: bool = Field(default=False, description="Whether deck is public")
+
+
+class VocabularyDeckCreate(VocabularyDeckBase):
+    """Schema for creating a deck"""
+    pass
+
+
+class VocabularyDeckResponse(VocabularyDeckBase):
+    """Schema for deck response"""
+    id: uuid.UUID
+    user_id: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
+    item_count: int = Field(default=0, description="Number of items in deck")
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AddToDeckRequest(BaseModel):
+    """Schema for adding vocabulary to deck"""
+    user_vocabulary_id: uuid.UUID
+    order: int = Field(default=0, description="Order in deck")
+
+
+# ===== Search & Filter Schemas =====
+
+class VocabularySearchParams(BaseModel):
+    """Query parameters for vocabulary search"""
+    search: Optional[str] = Field(None, description="Search term")
+    course_id: Optional[uuid.UUID] = Field(None, description="Filter by course")
+    lesson_id: Optional[uuid.UUID] = Field(None, description="Filter by lesson")
+    difficulty_level: Optional[str] = Field(None, description="A1, A2, B1, B2, C1, C2")
+    status: Optional[str] = Field(None, description="learning, reviewing, mastered")
+    limit: int = Field(default=50, ge=1, le=100, description="Results per page")
+    offset: int = Field(default=0, ge=0, description="Pagination offset")
+
+
+class VocabularyBulkAddRequest(BaseModel):
+    """Schema for bulk adding vocabulary from lesson"""
+    vocabulary_ids: List[uuid.UUID] = Field(
+        ..., max_length=200, description="List of vocabulary IDs to add"
+    )

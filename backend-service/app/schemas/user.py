@@ -1,0 +1,99 @@
+"""
+User Schemas
+"""
+
+from typing import Optional
+from uuid import UUID
+from datetime import datetime
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, UUID4
+
+
+class UserBase(BaseModel):
+    """Base user schema."""
+    email: EmailStr
+    username: str = Field(..., min_length=3, max_length=50)
+    display_name: Optional[str] = None
+    native_language: str = "vi"
+    target_language: str = "en"
+    level: str = "A1"
+
+
+class UserCreate(UserBase):
+    """Schema for user registration."""
+    password: str = Field(..., min_length=8, max_length=100)
+
+
+class UserUpdate(BaseModel):
+    """Schema for user profile update."""
+    display_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    native_language: Optional[str] = None
+    target_language: Optional[str] = None
+    level: Optional[str] = None
+    cefr_level: Optional[str] = None
+    goal: Optional[str] = None
+    interest: Optional[str] = None
+    is_onboarding_completed: Optional[bool] = None
+
+
+class UserResponse(UserBase):
+    """Schema for user response (public info)."""
+    id: UUID4
+    avatar_url: Optional[str] = None
+    is_active: bool
+    is_verified: bool
+    is_onboarding_completed: bool = False
+    created_at: datetime
+    last_login: Optional[datetime] = None
+    
+    # Level & Rank fields
+    cefr_level: str = "A1"
+    goal: Optional[str] = None
+    interest: Optional[str] = None
+    total_xp: int = 0
+    numeric_level: int = 1
+    rank: str = "bronze"
+    rank_score: float = 0.0
+    rank_level_score: float = 0.0
+    rank_proficiency_score: float = 0.0
+
+    # RBAC (admin console)
+    role_slug: str = "user"
+    role_level: int = 0
+    is_admin: bool = False
+    is_super_admin: bool = False
+    
+    # RBAC
+    role_id: Optional[UUID] = None
+    role_slug: Optional[str] = None  # Populated from role relationship
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserInDB(UserResponse):
+    """Schema for user in database (includes sensitive data)."""
+    hashed_password: str
+    updated_at: datetime
+
+
+class AdminUserUpdate(BaseModel):
+    """Admin update for user (role/status)."""
+    role_slug: Optional[str] = None
+    is_active: Optional[bool] = None
+    display_name: Optional[str] = None
+
+
+class AdminUserListItem(BaseModel):
+    """Admin view of user list."""
+    id: UUID4
+    email: EmailStr
+    username: str
+    display_name: Optional[str] = None
+    is_active: bool
+    is_verified: bool
+    role_slug: str = "user"
+    role_level: int = 0
+    created_at: datetime
+    last_login: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)

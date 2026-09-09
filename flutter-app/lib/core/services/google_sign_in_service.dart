@@ -1,0 +1,269 @@
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/services.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:lexilingo_app/firebase_options.dart';
+
+import '../utils/app_logger.dart';
+
+const _tag = 'GoogleSignInService';
+
+/// Service for handling Google Sign In
+///
+/// On Web: uses Firebase Auth [signInWithPopup] with [GoogleAuthProvider].
+/// This avoids calling the People API (which requires a separate GCP
+/// API enable step) and gets the id_token directly from the GIS popup.
+///
+/// On Mobile: uses the standard [google_sign_in] package so that the
+/// server-client-id / id_token exchange works correctly.
+class GoogleSignInService {
+  static const String redirectInProgressMarker =
+      '__GOOGLE_REDIRECT_IN_PROGRESS__';
+
+  final GoogleSignIn _googleSignIn;
+  String? _lastError;
+
+  String? get lastError => _lastError;
+
+  GoogleSignInService({GoogleSignIn? googleSignIn})
+    : _googleSignIn =
+          googleSignIn ??
+          GoogleSignIn(
+            scopes: ['email', 'profile'],
+            // serverClientId is only for Android/iOS
+            serverClientId: kIsWeb
+                ? null
+                : (dotenv.env['GOOGLE_SERVER_CLIENT_ID']?.isNotEmpty == true
+                      ? dotenv.env['GOOGLE_SERVER_CLIENT_ID']
+                      : null),
+          );
+
+  /// Sign in with Google and return the Firebase ID token.
+  /// Returns null if sign-in was cancelled or failed.
+  Future<String?> signIn() async {
+    try {
+      _lastError = null;
+      logInfo(_tag, 'Starting Google Sign In...');
+
+      if (kIsWeb) {
+        return await _signInWeb();
+      } else {
+        return await _signInMobile();
+      }
+    } catch (e) {
+      logError(_tag, 'Google Sign In error: $e');
+      _lastError = e.toString();
+      return null;
+    }
+  }
+
+  /// Web: use Firebase Auth signInWithPopup — no People API call needed.
+  /// Extracts the Google ID token from the OAuth credential (not the Firebase
+  /// ID token), so the backend's verify_google_token still works.
+  Future<String?> _signInWeb() async {
+    final firebaseEnabled =
+        dotenv.maybeGet('FIREBASE_ENABLED')?.trim().toLowerCase() == 'true' &&
+        DefaultFirebaseOptions.isReady;
+    if (!firebaseEnabled) {
+      throw StateError(
+        'Google Sign-In is disabled until owned Firebase web configuration is complete.',
+      );
+    }
+
+    final provider = GoogleAuthProvider()
+      ..addScope('email')
+      ..addScope('profile')
+      ..setCustomParameters({'prompt': 'select_account'});
+
+    // If the app has just returned from signInWithRedirect(), consume the
+    // pending credential first.
+    final pendingRedirectToken = await consumePendingWebRedirectIdToken();
+    if (pendingRedirectToken != null) {
+      return pendingRedirectToken;
+    }
+
+    try {
+      final userCredential = await FirebaseAuth.instance.signInWithPopup(
+        provider,
+      );
+
+      return await _extractGoogleIdTokenAndSignOut(userCredential);
+    } on FirebaseAuthException catch (e) {
+      if (_shouldFallbackToRedirect(e.code, e.message)) {
+        logWarn(
+          _tag,
+          'Popup sign-in failed (${e.code}), falling back to redirect flow',
+        );
+        await FirebaseAuth.instance.signInWithRedirect(provider);
+        return redirectInProgressMarker;
+      }
+      rethrow;
+    } catch (e) {
+      final message = e.toString();
+      if (_shouldFallbackToRedirect('unknown', message)) {
+        logWarn(
+          _tag,
+          'Popup sign-in blocked by browser policy, using redirect flow',
+        );
+        await FirebaseAuth.instance.signInWithRedirect(provider);
+        return redirectInProgressMarker;
+      }
+      rethrow;
+    }
+  }
+
+  /// Consume pending Google credential after signInWithRedirect().
+  /// Returns Google id_token if present.
+  Future<String?> consumePendingWebRedirectIdToken() async {
+    if (!kIsWeb || !DefaultFirebaseOptions.isReady) return null;
+
+    try {
+      final redirectResult = await FirebaseAuth.instance.getRedirectResult();
+      return await _extractGoogleIdTokenAndSignOut(redirectResult);
+    } catch (e) {
+      logWarn(_tag, 'No pending redirect result or failed to consume: $e');
+      return null;
+    }
+  }
+
+  Future<String?> _extractGoogleIdTokenAndSignOut(
+    UserCredential userCredential,
+  ) async {
+    // getRedirectResult() resolves with an empty credential when no redirect is
+    // pending — that is the normal popup path, not a failure.
+    if (userCredential.user == null && userCredential.credential == null) {
+      return null;
+    }
+
+    // Extract the Google ID token from the OAuth credential
+    final oauthCredential = userCredential.credential as OAuthCredential?;
+    String? googleIdToken = oauthCredential?.idToken;
+
+    // Web fallback: some browsers/policies return a credential without idToken.
+    // In that case we use Firebase ID token and let backend verify it.
+    googleIdToken ??= await userCredential.user?.getIdToken(true);
+
+    if (googleIdToken == null) {
+      logError(_tag, 'Failed to get Google ID token from Firebase credential');
+      return null;
+    }
+
+    // Sign out from Firebase immediately — the app manages its own session.
+    await FirebaseAuth.instance.signOut();
+
+    logInfo(_tag, 'Google Sign In successful (web)');
+    return googleIdToken;
+  }
+
+  bool _shouldFallbackToRedirect(String code, String? message) {
+    const fallbackCodes = {
+      'popup-blocked',
+      'popup-closed-by-user',
+      'cancelled-popup-request',
+      'operation-not-supported-in-this-environment',
+      'web-storage-unsupported',
+    };
+
+    if (fallbackCodes.contains(code)) return true;
+
+    final normalized = (message ?? '').toLowerCase();
+    return normalized.contains('cross-origin-opener-policy') ||
+        normalized.contains('window.closed') ||
+        normalized.contains('popup');
+  }
+
+  /// Mobile: use google_sign_in package to get the Google id_token.
+  Future<String?> _signInMobile() async {
+    try {
+      // Clear only the local session before showing the account picker.
+      // disconnect() revokes OAuth access over the network and can fail before
+      // signIn() starts, leaving users unable to log in again.
+      try {
+        await _googleSignIn.signOut();
+      } on PlatformException catch (e) {
+        logWarn(
+          _tag,
+          'Could not clear previous Google session: ${e.code} ${e.message}',
+        );
+      }
+
+      final GoogleSignInAccount? account = await _googleSignIn.signIn();
+      if (account == null) {
+        logWarn(_tag, 'Google Sign In cancelled by user');
+        _lastError = 'cancelled';
+        return null;
+      }
+
+      logDebug(_tag, 'Google account obtained: ${account.email}');
+
+      final GoogleSignInAuthentication auth = await account.authentication;
+      if (auth.idToken == null) {
+        logError(_tag, 'Failed to get ID token from Google (mobile)');
+        _lastError =
+            'Unable to get Google ID token. Check GOOGLE_SERVER_CLIENT_ID and Android SHA-1/SHA-256 config.';
+        return null;
+      }
+
+      logInfo(_tag, 'Google Sign In successful (mobile)');
+      return auth.idToken;
+    } on PlatformException catch (e) {
+      _lastError = _mapMobileGoogleError(e);
+      logError(
+        _tag,
+        'Google mobile sign-in PlatformException: ${e.code} ${e.message}',
+      );
+      return null;
+    }
+  }
+
+  String _mapMobileGoogleError(PlatformException e) {
+    final code = e.code.toLowerCase();
+    final message = (e.message ?? '').toLowerCase();
+    final details = (e.details ?? '').toString().toLowerCase();
+    final combined = '$code $message $details';
+
+    if (combined.contains('10') ||
+        combined.contains('developer_error') ||
+        combined.contains('12500')) {
+      return 'Google Sign-In Android config mismatch (SHA/client ID). Update SHA-1/SHA-256 in Firebase and refresh google-services.json.';
+    }
+
+    if (combined.contains('network')) {
+      return 'Network error during Google Sign-In. Please check your connection.';
+    }
+
+    if (combined.contains('cancel')) {
+      return 'cancelled';
+    }
+
+    return e.message ?? 'Google Sign-In failed on mobile.';
+  }
+
+  /// Sign out from Google without revoking the user's OAuth grant.
+  Future<void> signOut() async {
+    try {
+      if (!kIsWeb) {
+        await _googleSignIn.signOut();
+      } else if (DefaultFirebaseOptions.isReady) {
+        await FirebaseAuth.instance.signOut();
+      }
+      logInfo(_tag, 'Google Sign Out successful');
+    } catch (e) {
+      logError(_tag, 'Google Sign Out error: $e');
+    }
+  }
+
+  /// Check if user is currently signed in
+  Future<bool> isSignedIn() async {
+    if (kIsWeb) {
+      if (!DefaultFirebaseOptions.isReady) return false;
+      return FirebaseAuth.instance.currentUser != null;
+    }
+    return await _googleSignIn.isSignedIn();
+  }
+
+  /// Get current Google account (mobile only)
+  GoogleSignInAccount? get currentUser =>
+      kIsWeb ? null : _googleSignIn.currentUser;
+}

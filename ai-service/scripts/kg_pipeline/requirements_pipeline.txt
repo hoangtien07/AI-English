@@ -1,0 +1,3 @@
+# Dependencies for importing repository-owned KG CSV data.
+kuzu>=0.11.3
+tqdm>=4.66.0

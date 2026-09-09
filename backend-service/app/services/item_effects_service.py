@@ -1,0 +1,423 @@
+"""
+Item Effects Service
+
+Handles activation and effects of shop items like:
+- Streak Freeze: Protects streak for 24 hours
+- Double XP: 2x XP multiplier for specified duration
+- Hint Pack: Additional hints for lessons
+- Heart Refill: Restore lives/hearts
+"""
+
+from typing import Optional, Dict, Any, Tuple, List
+from uuid import UUID
+from datetime import datetime, timedelta, timezone
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, and_, update
+from sqlalchemy.exc import IntegrityError
+
+from app.core.shop_catalog import GAME_POWERUP_ITEM_TYPES
+from app.models.gamification import ChallengeRewardClaim, UserInventory, ShopItem
+from app.models.progress import LessonAttempt, Streak
+
+
+class ItemEffectsService:
+    """Service for managing item usage and effects."""
+
+    COSMETIC_ITEM_TYPES = frozenset({"avatar", "theme"})
+
+    # Item type handlers
+    ITEM_HANDLERS = {
+        'streak_freeze': '_handle_streak_freeze',
+        'double_xp': '_handle_double_xp',
+        'hint_pack': '_handle_hint_pack',
+        'heart_refill': '_handle_heart_refill',
+        **{item_type: '_handle_instant_game_powerup' for item_type in GAME_POWERUP_ITEM_TYPES},
+    }
+    
+    def __init__(self, db: AsyncSession):
+        self.db = db
+    
+    async def use_item(
+        self, 
+        user_id: UUID, 
+        inventory_id: UUID
+    ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+        """
+        Use an item from inventory.
+        
+        Args:
+            user_id: User's ID
+            inventory_id: Inventory item ID to use
+            
+        Returns:
+            Tuple of (success, message, effects_applied)
+        """
+        # Get inventory item
+        result = await self.db.execute(
+            select(UserInventory).where(
+                and_(
+                    UserInventory.id == inventory_id,
+                    UserInventory.user_id == user_id
+                )
+            )
+        )
+        inventory = result.scalar_one_or_none()
+        
+        if not inventory:
+            return False, "Item not found in inventory", None
+        
+        if inventory.quantity <= 0:
+            return False, "No items remaining", None
+        
+        # Get shop item details
+        item_result = await self.db.execute(
+            select(ShopItem).where(ShopItem.id == inventory.shop_item_id)
+        )
+        shop_item = item_result.scalar_one_or_none()
+        
+        if not shop_item:
+            return False, "Shop item not found", None
+
+        if shop_item.item_type in self.COSMETIC_ITEM_TYPES:
+            return False, (
+                f"{shop_item.item_type} items are permanent cosmetics. "
+                "Equip them from the dedicated inventory endpoint."
+            ), None
+        
+        # Get handler for this item type
+        handler_name = self.ITEM_HANDLERS.get(shop_item.item_type)
+        if not handler_name:
+            return False, f"Unknown item type: {shop_item.item_type}", None
+        
+        handler = getattr(self, handler_name, None)
+        if not handler:
+            return False, "Item handler not implemented", None
+        
+        # Execute the handler
+        success, message, effects = await handler(
+            user_id=user_id,
+            inventory=inventory,
+            shop_item=shop_item,
+        )
+        
+        if success:
+            # Decrement quantity
+            inventory.quantity -= 1
+            
+            # Mark activation if applicable
+            if shop_item.effects and shop_item.effects.get('duration_hours'):
+                duration = shop_item.effects['duration_hours']
+                inventory.is_active = True
+                inventory.activated_at = datetime.now(timezone.utc)
+                inventory.expires_at = datetime.now(timezone.utc) + timedelta(hours=duration)
+            
+            await self.db.commit()
+        
+        return success, message, effects
+    
+    async def _handle_streak_freeze(
+        self,
+        user_id: UUID,
+        inventory: UserInventory,
+        shop_item: ShopItem,
+    ) -> Tuple[bool, str, Optional[Dict]]:
+        """Handle streak freeze item usage."""
+        # Get user's streak
+        result = await self.db.execute(
+            select(Streak).where(Streak.user_id == user_id)
+        )
+        streak = result.scalar_one_or_none()
+        
+        if not streak:
+            # Create streak record
+            streak = Streak(user_id=user_id, freeze_count=0)
+            self.db.add(streak)
+        
+        quantity = max(1, int((shop_item.effects or {}).get("quantity", 1)))
+        streak.freeze_count += quantity
+        
+        return True, f"Streak freeze added! You now have {streak.freeze_count} freezes.", {
+            "freeze_count": streak.freeze_count,
+            "effect": "streak_protection"
+        }
+    
+    async def _handle_double_xp(
+        self,
+        user_id: UUID,
+        inventory: UserInventory,
+        shop_item: ShopItem,
+    ) -> Tuple[bool, str, Optional[Dict]]:
+        """Handle double XP boost activation."""
+        effects = shop_item.effects or {}
+        duration = effects.get('duration_hours', 1)
+        multiplier = effects.get('multiplier', 2)
+        
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=duration)
+        
+        return True, f"Double XP activated! {multiplier}x XP for {duration} hour(s)", {
+            "multiplier": multiplier,
+            "duration_hours": duration,
+            "expires_at": expires_at.isoformat(),
+            "effect": "xp_boost"
+        }
+    
+    async def _handle_hint_pack(
+        self,
+        user_id: UUID,
+        inventory: UserInventory,
+        shop_item: ShopItem,
+    ) -> Tuple[bool, str, Optional[Dict]]:
+        """Add purchased hints to the user's unfinished lesson attempt."""
+        effects = shop_item.effects or {}
+        hint_count = max(1, int(effects.get('quantity', 5)))
+        attempt = await self._get_active_lesson_attempt(user_id)
+        if not attempt:
+            return False, "Start a lesson before using a hint pack", None
+
+        attempt.bonus_hints = (attempt.bonus_hints or 0) + hint_count
+        hints_used = attempt.hints_used or 0
+        return True, f"Added {hint_count} hints to your active lesson!", {
+            "hints_added": hint_count,
+            "hints_remaining": max(
+                0,
+                3 + attempt.bonus_hints - hints_used,
+            ),
+            "effect": "hints"
+        }
+    
+    async def _handle_heart_refill(
+        self,
+        user_id: UUID,
+        inventory: UserInventory,
+        shop_item: ShopItem,
+    ) -> Tuple[bool, str, Optional[Dict]]:
+        """Restore hearts on the user's unfinished lesson attempt."""
+        attempt = await self._get_active_lesson_attempt(user_id)
+        if not attempt:
+            return False, "Start a lesson before using a heart refill", None
+
+        max_hearts = max(1, int((shop_item.effects or {}).get("hearts", 3)))
+        attempt.lives_remaining = max_hearts
+        return True, "Hearts refilled to maximum!", {
+            "hearts_restored": max_hearts,
+            "effect": "hearts"
+        }
+
+    async def _get_active_lesson_attempt(
+        self,
+        user_id: UUID,
+    ) -> Optional[LessonAttempt]:
+        result = await self.db.execute(
+            select(LessonAttempt)
+            .where(
+                and_(
+                    LessonAttempt.user_id == user_id,
+                    LessonAttempt.finished_at.is_(None),
+                )
+            )
+            .order_by(LessonAttempt.started_at.desc())
+        )
+        return result.scalars().first()
+    
+    async def _handle_instant_game_powerup(
+        self,
+        user_id: UUID,
+        inventory: UserInventory,
+        shop_item: ShopItem,
+    ) -> Tuple[bool, str, Optional[Dict]]:
+        """Handle one-shot in-game power-ups (time freeze, skip, reveal, shield, etc.).
+
+        These have no server-tracked state — the mini-games apply the effect
+        client-side. The handler just validates and echoes the item's effects
+        payload back so the client knows what to do.
+        """
+        return True, f"{shop_item.name} ready!", {
+            "item_type": shop_item.item_type,
+            **(shop_item.effects or {}),
+        }
+    
+    async def get_active_boosts(self, user_id: UUID) -> List[Dict[str, Any]]:
+        """
+        Get all currently active boosts for a user.
+        
+        Returns list of active boosts with their effects and expiration times.
+        """
+        now = datetime.now(timezone.utc)
+        
+        result = await self.db.execute(
+            select(UserInventory, ShopItem)
+            .join(ShopItem, UserInventory.shop_item_id == ShopItem.id)
+            .where(
+                and_(
+                    UserInventory.user_id == user_id,
+                    UserInventory.is_active.is_(True),
+                    UserInventory.expires_at > now
+                )
+            )
+        )
+        
+        active_boosts = []
+        for inventory, shop_item in result:
+            remaining_seconds = (inventory.expires_at - now).total_seconds()
+            
+            active_boosts.append({
+                "item_id": str(shop_item.id),
+                "item_name": shop_item.name,
+                "item_type": shop_item.item_type,
+                "effects": shop_item.effects,
+                "activated_at": inventory.activated_at.isoformat() if inventory.activated_at else None,
+                "expires_at": inventory.expires_at.isoformat() if inventory.expires_at else None,
+                "remaining_seconds": max(0, int(remaining_seconds)),
+            })
+        
+        return active_boosts
+    
+    async def get_xp_multiplier(self, user_id: UUID) -> float:
+        """
+        Calculate current XP multiplier for a user.
+        
+        Checks for active double_xp boosts and returns the multiplier.
+        Default is 1.0 (no boost).
+        """
+        active_boosts = await self.get_active_boosts(user_id)
+        
+        multiplier = 1.0
+        for boost in active_boosts:
+            if boost['item_type'] == 'double_xp':
+                effects = boost.get('effects') or {}
+                boost_multiplier = effects.get('multiplier', 2.0)
+                multiplier = max(multiplier, boost_multiplier)
+        
+        return multiplier
+    
+    async def cleanup_expired_boosts(self, user_id: UUID) -> int:
+        """
+        Deactivate expired boosts for a user.
+        
+        Returns number of boosts deactivated.
+        """
+        now = datetime.now(timezone.utc)
+        
+        result = await self.db.execute(
+            update(UserInventory)
+            .where(
+                and_(
+                    UserInventory.user_id == user_id,
+                    UserInventory.is_active.is_(True),
+                    UserInventory.expires_at <= now
+                )
+            )
+            .values(is_active=False)
+        )
+        
+        await self.db.commit()
+        return result.rowcount
+
+
+class DailyChallengeService:
+    """Service for managing daily challenge rewards."""
+    
+    def __init__(self, db: AsyncSession):
+        self.db = db
+    
+    async def claim_challenge_reward(
+        self,
+        user_id: UUID,
+        challenge_id: str,
+        xp_reward: int,
+        gems_reward: int = 0
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        """
+        Claim reward for completing a daily challenge.
+        
+        Checks if already claimed today and awards XP/gems if not.
+        """
+        from app.models.progress import DailyActivity
+        from app.crud.gamification import WalletCRUD
+        
+        today = datetime.now(timezone.utc).date()
+        claim_date = datetime.combine(
+            today,
+            datetime.min.time(),
+            tzinfo=timezone.utc,
+        )
+
+        existing_claim = await self.db.execute(
+            select(ChallengeRewardClaim).where(
+                and_(
+                    ChallengeRewardClaim.user_id == user_id,
+                    ChallengeRewardClaim.challenge_id == challenge_id,
+                    ChallengeRewardClaim.claim_date == claim_date,
+                )
+            )
+        )
+        if existing_claim.scalar_one_or_none():
+            return False, "Reward already claimed today", {
+                "challenge_id": challenge_id,
+                "already_claimed": True,
+            }
+
+        # Award XP to User.total_xp and DailyActivity
+        if xp_reward > 0:
+            from app.models.user import User
+            from app.models.progress import DailyActivity
+
+            user_result = await self.db.execute(select(User).where(User.id == user_id))
+            user = user_result.scalar_one_or_none()
+            if user is not None:
+                user.total_xp = (user.total_xp or 0) + xp_reward
+
+            activity_result = await self.db.execute(
+                select(DailyActivity).where(
+                    and_(DailyActivity.user_id == user_id, DailyActivity.activity_date == today)
+                )
+            )
+            activity = activity_result.scalar_one_or_none()
+            if activity is not None:
+                activity.xp_earned = (activity.xp_earned or 0) + xp_reward
+            else:
+                self.db.add(DailyActivity(
+                    user_id=user_id,
+                    activity_date=today,
+                    xp_earned=xp_reward,
+                    lessons_completed=0,
+                    study_time_minutes=0,
+                ))
+
+            from app.crud.gamification import LeaderboardCRUD
+            await LeaderboardCRUD.add_xp(self.db, user_id, xp_reward)
+
+        # Award gems if applicable
+        if gems_reward > 0:
+            await WalletCRUD.add_gems(
+                self.db,
+                user_id,
+                gems_reward,
+                source="daily_challenge",
+                description=f"Challenge reward: {challenge_id}",
+                commit=False,
+            )
+
+        self.db.add(ChallengeRewardClaim(
+            user_id=user_id,
+            challenge_id=challenge_id,
+            claim_date=claim_date,
+            xp_reward=xp_reward,
+            gems_reward=gems_reward,
+        ))
+
+        try:
+            await self.db.commit()
+        except IntegrityError:
+            await self.db.rollback()
+            return False, "Reward already claimed today", {
+                "challenge_id": challenge_id,
+                "already_claimed": True,
+            }
+        
+        return True, f"Claimed! +{xp_reward} XP" + (f" +{gems_reward} gems" if gems_reward else ""), {
+            "xp_earned": xp_reward,
+            "gems_earned": gems_reward,
+            "challenge_id": challenge_id,
+            "claimed_at": datetime.now(timezone.utc).isoformat()
+        }

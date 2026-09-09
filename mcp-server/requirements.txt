@@ -1,0 +1,29 @@
+# MCP Server Dependencies
+# Lightweight stdio server for IDE integration — heavy ML models are in ai-service.
+
+# Core MCP
+# Pinned below 2.0 — that release drops the lowlevel Server decorator API
+# (list_tools/call_tool/etc.) this server is written against.
+mcp>=1.0.0,<2.0.0
+
+# HTTP Client
+httpx>=0.26.0
+
+# Web search (Tavily)
+tavily-python>=0.3.0
+
+# Google AI (Gemini)
+google-generativeai>=0.3.0
+
+# Audio data handling
+numpy>=1.26.0
+soundfile>=0.12.1
+
+# Utilities
+pydantic>=2.5.3
+python-dotenv>=1.0.0
+PyYAML>=6.0.1
+
+# Development
+pytest>=7.4.3
+pytest-asyncio>=0.23.2

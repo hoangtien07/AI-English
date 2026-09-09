@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: lexilingo-postgres
+    mem_limit: 512m
+    memswap_limit: 512m
+    environment:
+      POSTGRES_USER: lexilingo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: lexilingo
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lexilingo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lexilingo-network
+
+  # Backend Service
+  backend-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lexilingo-backend-service
+    env_file:
+      - .env
+    mem_limit: 1g
+    memswap_limit: 1g
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-lexilingo}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-lexilingo}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+      DEBUG: ${DEBUG:-False}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?Set ALLOWED_ORIGINS in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+      - ./data:/app/data
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers --forwarded-allow-ips="*"
+    networks:
+      - lexilingo-network
+
+volumes:
+  postgres_data:
+
+networks:
+  lexilingo-network:
+    driver: bridge

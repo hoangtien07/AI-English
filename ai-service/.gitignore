@@ -1,0 +1,90 @@
+.env
+.env.docker
+.env.development
+.env.production
+.env.production.secrets
+.env.*.secrets
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+.vscode/
+.idea/
+node_modules/
+dist/
+build/
+*.log
+coverage/
+*.sqlite3
+*.db
+*.egg-info/
+.env.local
+.env.*.local
+*.iml
+*.swp
+/models/
+checkpoints/
+outputs/
+logs/
+temp/
+reports/e2e/
+
+# KuzuDB and data files (generated at runtime)
+data/kuzu_db
+data/kuzu_db/
+data/kuzu_db.wal
+data/kuzu_db.shadow*
+data/*.db.quarantine.*
+data/*.db.rebuild.*
+data/kuzu
+data/kuzu/
+data/kuzu.wal
+data/kuzu_runtime.db.wal
+data/*.init.lock
+data/kuzu_synced_files.json
+api/data/
+data/backups/
+
+# KG raw data — large generated/downloaded files (NOT for git)
+data/kg_raw/nodes.csv
+data/kg_raw/edges.csv
+data/kg_raw/nodes_final.csv
+data/kg_raw/edges_final.csv
+data/kg_raw/*.gz
+data/kg_raw/*.jsonl
+kg_raw/
+
+# Large generated kg_output artifacts (regenerate with generate_tracecag_topic_corpus.py / crawl_topic_knowledge.py)
+data/kg_output/finetune_samples.jsonl
+data/kg_output/tracecag_topic_corpus/tracecag_topic_quadruples.jsonl
+data/kg_output/tracecag_topic_corpus/tracecag_topic_edges.jsonl
+data/kg_output/tracecag_topic_corpus/tracecag_knowledge_prefix.full.txt
+data/kg_output/kg_checkpoint*.jsonl
+data/kg_output/preprocessed_dataset.jsonl
+data/kg_output/entity_cards.json
+data/kg_output/quadruples.json
+data/kg_output/nodes.json
+data/kg_output/edges.json
+data/kg_output/topic_crawl/topic_crawl_report.json
+data/kg_output/tracecag_topic_corpus/tracecag_topic_corpus_report.json
+data/sample_stories.expanded.json
+
+# ConceptNet-derived edges — 18MB+ generated file, deploy via scp not git
+# (regenerate from data/kg_output/hf_import_staging/relations/graph.json)
+data/kg/12_lexical_relations.json
+
+# HF dataset staging/scratch work — not production data, regenerate as needed
+data/kg_output/hf_import_staging/
+
+# Licensed Content ETL — downloaded datasets and immutable snapshots (never commit)
+data/content-etl/
+
+# Crawler cache
+.crawl4ai/
+model-development/
+
+# Licensed-content ETL snapshots — re-downloadable, 320MB and growing
+content_etl_data/
+
+# derived embedding cache for scripts/eval_kg_retrieval.py
+data/eval/concept_emb.npy

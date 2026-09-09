@@ -1,0 +1,483 @@
+"""
+Application configuration
+
+Using Pydantic settings for type-safe configuration
+"""
+
+import os
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Annotated
+
+from dotenv import load_dotenv
+from pydantic import EmailStr, Field, TypeAdapter, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+# Get project root directory and load environment files explicitly.
+# Always load .env first, then override with .env.production in production mode.
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+load_dotenv(PROJECT_ROOT / ".env")
+if os.getenv("APP_ENV", "").lower() == "production":
+    # Do not use override=True here because it overwrites real container environment variables!
+    load_dotenv(PROJECT_ROOT / ".env.production", override=False)
+
+
+_email_adapter = TypeAdapter(EmailStr)
+
+
+def _parse_exact_email_allowlist(raw_value: str) -> list[str]:
+    """Return de-duplicated, case-normalized exact email addresses only."""
+    normalized_emails: list[str] = []
+    for raw_email in raw_value.split(","):
+        candidate = raw_email.strip()
+        if not candidate:
+            continue
+        if "*" in candidate:
+            raise ValueError("admin email allowlists accept exact email addresses only")
+        try:
+            normalized = str(_email_adapter.validate_python(candidate)).casefold()
+        except ValueError as exc:
+            raise ValueError("admin email allowlists must contain valid email addresses") from exc
+        if normalized not in normalized_emails:
+            normalized_emails.append(normalized)
+    return normalized_emails
+
+
+class Settings(BaseSettings):
+    """Application settings."""
+
+    # Application
+    APP_NAME: str = "LexiLingo Backend Service"
+    APP_ENV: str = "development"
+    API_V1_PREFIX: str = "/api/v1"
+    DEBUG: bool = False
+    PORT: int = 8000
+
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def parse_debug_flag(cls, value):
+        """Accept Flutter-style build mode strings used by local env files."""
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized == "release":
+                return False
+            if normalized == "debug":
+                return True
+        return value
+
+    @field_validator("LEARNER_STATE_INTERNAL_TOKEN_PREVIOUS_EXPIRES_AT", mode="before")
+    @classmethod
+    def validate_previous_token_expiry(cls, value):
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+        if isinstance(value, str):
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("previous learner-state token expiry must include a timezone")
+        return value.astimezone(UTC)
+
+    @field_validator("LEARNER_STATE_MAX_BODY_BYTES")
+    @classmethod
+    def validate_learner_state_body_limit(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("LEARNER_STATE_MAX_BODY_BYTES must be positive")
+        return value
+
+    # Database
+    DATABASE_URL: str
+    DB_ECHO: bool = False
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 10
+
+    @property
+    def async_database_url(self) -> str:
+        """
+        Return an async-compatible DATABASE_URL.
+
+        Render/Supabase/Heroku often provide ``postgres://`` or
+        ``postgresql://`` URLs.  SQLAlchemy async requires the
+        ``postgresql+asyncpg://`` scheme.  This property normalises that so
+        env-vars from hosting providers work without manual editing.
+        """
+        url = self.DATABASE_URL
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif url.startswith("postgresql://") and "+asyncpg" not in url:
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return url
+
+    # Request limits
+    MAX_REQUEST_BODY_BYTES: int = 10 * 1024 * 1024  # 10 MB
+
+    @property
+    def effective_pool_size(self) -> int:
+        """Return larger pool in production (sized for 10k concurrent users)."""
+        return 100 if self.is_production else self.DB_POOL_SIZE
+
+    @property
+    def effective_max_overflow(self) -> int:
+        """Return larger overflow in production."""
+        return 50 if self.is_production else self.DB_MAX_OVERFLOW
+
+    # Security
+    SECRET_KEY: str
+    ALGORITHM: str = "HS256"
+    JWT_ISSUER: str = "lexilingo-backend"
+    JWT_AUDIENCE: str = "lexilingo-services"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+    # CORS
+    # ENABLE_APP_CORS: explicit override (takes priority over GATEWAY_HANDLES_CORS).
+    # GATEWAY_HANDLES_CORS: set true only when an Nginx/Kong gateway sits in front
+    #   and emits CORS headers via proxy_hide_header + add_header. The gateway's
+    #   proxy_hide_header strips backend CORS headers, preventing duplicates.
+    #   Default false (safe for direct Render/PaaS deployments without a gateway).
+    ENABLE_APP_CORS: bool | None = None
+    GATEWAY_HANDLES_CORS: bool = False
+    ALLOWED_ORIGINS: str = (
+        "http://localhost:8080,http://127.0.0.1:8080,"
+        "http://localhost:5176,http://127.0.0.1:5176"
+    )
+    CORS_ALLOW_ORIGIN_REGEX: str = (
+        r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+    )
+    ALLOWED_HOSTS: Annotated[list[str], NoDecode] = [
+        "localhost",
+        "127.0.0.1",
+    ]
+
+    @field_validator("ALLOWED_HOSTS", mode="before")
+    @classmethod
+    def parse_allowed_hosts(cls, value):
+        """Accept either JSON/list values or a comma-separated env var."""
+        if isinstance(value, str):
+            return [host.strip() for host in value.split(",") if host.strip()]
+        return value
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """Parse ALLOWED_ORIGINS string to list"""
+        return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
+
+    @model_validator(mode="after")
+    def validate_production_security(self):
+        """Fail fast on unsafe production security settings."""
+        if not self.is_production:
+            return self
+
+        if self.DEBUG:
+            raise ValueError("DEBUG must be false when APP_ENV=production")
+
+        if self.SECRET_KEY.strip().lower().startswith(("your-secret", "change_me", "replace_")):
+            raise ValueError("SECRET_KEY must be a real secret when APP_ENV=production")
+        if len(self.SECRET_KEY.strip()) < 32:
+            raise ValueError(
+                "SECRET_KEY must be at least 32 characters when APP_ENV=production"
+            )
+
+        if self.enable_app_cors:
+            origins = self.cors_origins
+            local_origins = [
+                origin for origin in origins if "localhost" in origin or "127.0.0.1" in origin
+            ]
+            if "*" in origins:
+                raise ValueError(
+                    "Wildcard CORS origins are not allowed with credentials in production"
+                )
+            if local_origins:
+                raise ValueError("Localhost CORS origins are not allowed when APP_ENV=production")
+            # CORS_ALLOW_ORIGIN_REGEX is a regex pattern, so literal dots are
+            # usually escaped ("devtunnels\.ms") — strip backslashes before
+            # substring-matching or this check silently never fires.
+            unescaped_regex = self.CORS_ALLOW_ORIGIN_REGEX.replace("\\", "")
+            if ".*" in self.CORS_ALLOW_ORIGIN_REGEX:
+                raise ValueError(
+                    "Unbounded CORS regex is not allowed when APP_ENV=production"
+                )
+            if "localhost" in unescaped_regex or "127.0.0.1" in unescaped_regex:
+                raise ValueError(
+                    "Localhost CORS regex is not allowed when APP_ENV=production"
+                )
+            if "devtunnels.ms" in unescaped_regex or "github.dev" in unescaped_regex:
+                raise ValueError("Broad development tunnel CORS regex is not allowed in production")
+
+        if self.CONTENT_AGENT_ENABLED and not self.CONTENT_AGENT_SERVICE_TOKEN.strip():
+            raise ValueError(
+                "CONTENT_AGENT_SERVICE_TOKEN is required when the content agent is enabled"
+            )
+
+        if not (self.GOOGLE_CLIENT_ID or "").strip():
+            raise ValueError(
+                "GOOGLE_CLIENT_ID must be set when APP_ENV=production — without it, "
+                "Google login falls back to verifying tokens with no audience "
+                "restriction, accepting a token issued for any Google app."
+            )
+        if not (self.GOOGLE_ADMIN_CLIENT_ID or "").strip():
+            raise ValueError(
+                "GOOGLE_ADMIN_CLIENT_ID must be set when APP_ENV=production "
+                "(required for admin OAuth audience verification)"
+            )
+
+        if self.LEARNER_STATE_ENABLED and not self.LEARNER_STATE_INTERNAL_TOKEN.strip():
+            raise ValueError(
+                "LEARNER_STATE_INTERNAL_TOKEN is required when learner state is enabled"
+            )
+        if self.LEARNER_STATE_ENABLED:
+            if len(self.LEARNER_STATE_INTERNAL_TOKEN) < 32:
+                raise ValueError("LEARNER_STATE_INTERNAL_TOKEN must be at least 32 characters")
+            if not self.LEARNER_STATE_INTERNAL_AUDIENCE.strip():
+                raise ValueError("LEARNER_STATE_INTERNAL_AUDIENCE must not be empty")
+            previous = self.LEARNER_STATE_INTERNAL_TOKEN_PREVIOUS
+            if previous:
+                if previous == self.LEARNER_STATE_INTERNAL_TOKEN:
+                    raise ValueError("current and previous learner-state tokens must differ")
+                if self.LEARNER_STATE_INTERNAL_TOKEN_PREVIOUS_EXPIRES_AT is None:
+                    raise ValueError("previous learner-state token requires an expiry")
+
+        if self.FIREBASE_CREDENTIALS_FILE:
+            resolved = (PROJECT_ROOT / self.FIREBASE_CREDENTIALS_FILE).resolve()
+            if PROJECT_ROOT.resolve() in resolved.parents or resolved == PROJECT_ROOT.resolve():
+                raise ValueError(
+                    "FIREBASE_CREDENTIALS_FILE must not point inside the project source "
+                    "tree in production — use a runtime secret mount and an absolute path "
+                    "outside the repo (e.g. /run/secrets/firebase.json)"
+                )
+
+        smtp_host = (self.SMTP_HOST or "").strip().lower()
+        if smtp_host:
+            if not (self.SMTP_USERNAME or "").strip() or not (self.SMTP_PASSWORD or "").strip():
+                raise ValueError("SMTP_USERNAME and SMTP_PASSWORD are required when SMTP_HOST is set")
+            if not self.EMAIL_FROM.strip():
+                raise ValueError("EMAIL_FROM is required when SMTP_HOST is set")
+            if self.SMTP_USE_TLS == self.SMTP_USE_SSL:
+                raise ValueError("configure exactly one of SMTP_USE_TLS or SMTP_USE_SSL")
+            if smtp_host == "smtp.gmail.com" and (
+                self.SMTP_PORT != 587 or not self.SMTP_USE_TLS or self.SMTP_USE_SSL
+            ):
+                raise ValueError("Gmail SMTP requires STARTTLS on smtp.gmail.com:587")
+
+        return self
+
+    # Logging
+    LOG_LEVEL: str = "INFO"
+
+    # Error Tracking
+    SENTRY_DSN: str | None = None
+
+    # Email (SMTP)
+    SMTP_HOST: str | None = None
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str | None = None
+    SMTP_PASSWORD: str | None = None
+    SMTP_USE_TLS: bool = True
+    SMTP_USE_SSL: bool = False
+    SMTP_TIMEOUT: int = Field(default=10, ge=1, le=30)
+    EMAIL_FROM: str = "noreply@lexilingo.app"
+    PASSWORD_RESET_URL_BASE: str = "lexilingo-app://reset-password"
+    PASSWORD_RESET_URL_BASE_PRODUCTION: str | None = None
+    EMAIL_VERIFICATION_URL_BASE: str = "http://localhost:8080/#/verify-email"
+    EMAIL_VERIFICATION_URL_BASE_PRODUCTION: str | None = None
+
+    # AI Service (optional)
+    AI_SERVICE_URL: str = "http://127.0.0.1:8001/api/v1"
+    AI_AUDIT_INGEST_SECRET: str = ""
+    LEARNER_STATE_ENABLED: bool = False
+    LEARNER_STATE_INTERNAL_TOKEN: str = ""
+    LEARNER_STATE_INTERNAL_TOKEN_PREVIOUS: str = ""
+    LEARNER_STATE_INTERNAL_TOKEN_PREVIOUS_EXPIRES_AT: datetime | None = None
+    LEARNER_STATE_INTERNAL_AUDIENCE: str = "lexilingo-backend"
+    LEARNER_STATE_MAX_BODY_BYTES: int = 512 * 1024
+    LEARNER_STATE_OUTBOX_BATCH_SIZE: int = 100
+    LEARNER_STATE_OUTBOX_POLL_MS: int = 100
+    LEARNER_STATE_OUTBOX_LEASE_SECONDS: int = 30
+    LEARNER_STATE_OUTBOX_MAX_ATTEMPTS: int = 10
+    LEARNER_STATE_STATEMENT_TIMEOUT_MS: int = 100
+    CONTENT_AGENT_ENABLED: bool = False
+    CONTENT_AGENT_SERVICE_TOKEN: str = ""
+    CONTENT_AGENT_UPLOAD_TTL_DAYS: int = 7
+    CONTENT_AGENT_AI_TIMEOUT_SECONDS: float = 120.0
+    CONTENT_AGENT_MAX_ACTIVE_JOBS_PER_ADMIN: int = 5
+
+    # Ranking / Gamification Agent
+    RANKING_AGENT_ENABLED: bool = True
+    RANKING_AGENT_MAX_ACTIVE_JOBS_PER_ADMIN: int = 3
+    RANKING_AGENT_AI_INSIGHTS_TIMEOUT_SECONDS: float = 30.0
+    LEAGUE_RESET_PROMOTION_THRESHOLD: float = 0.10
+    LEAGUE_RESET_DEMOTION_THRESHOLD: float = 0.10
+
+    # Notification Campaign Agent
+    NOTIFICATION_CAMPAIGN_ENABLED: bool = True
+    NOTIFICATION_CAMPAIGN_MAX_ACTIVE_JOBS_PER_ADMIN: int = 3
+    NOTIFICATION_CAMPAIGN_AI_TIMEOUT_SECONDS: float = 30.0
+
+    # Google OAuth
+    GOOGLE_CLIENT_ID: str | None = None
+    GOOGLE_ADMIN_CLIENT_ID: str | None = None
+    ADMIN_EMAIL_WHITELIST: str = ""
+    SUPER_ADMIN_EMAIL_WHITELIST: str = ""
+
+    @field_validator("SMTP_USERNAME", "EMAIL_FROM", mode="before")
+    @classmethod
+    def normalize_smtp_email(cls, value):
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("SMTP sender values must be email addresses")
+        candidate = value.strip()
+        if not candidate:
+            return candidate
+        try:
+            return str(_email_adapter.validate_python(candidate)).casefold()
+        except ValueError as exc:
+            raise ValueError("SMTP sender values must be valid email addresses") from exc
+
+    @field_validator("SMTP_HOST", mode="before")
+    @classmethod
+    def normalize_smtp_host(cls, value):
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("SMTP_HOST must be a hostname")
+        return value.strip().casefold() or None
+
+    @field_validator("ADMIN_EMAIL_WHITELIST", "SUPER_ADMIN_EMAIL_WHITELIST", mode="before")
+    @classmethod
+    def validate_admin_email_allowlists(cls, value) -> str:
+        if value is None:
+            return ""
+        if not isinstance(value, str):
+            raise ValueError("admin email allowlists must be comma-separated strings")
+        _parse_exact_email_allowlist(value)
+        return value
+
+    # RevenueCat (server-side entitlement verification)
+    REVENUECAT_SECRET_API_KEY: str | None = None
+    REVENUECAT_TIMEOUT_SECONDS: float = 5.0
+
+    @staticmethod
+    def _parse_email_list(raw_value: str) -> list[str]:
+        """Normalize a comma-separated email allowlist."""
+        return _parse_exact_email_allowlist(raw_value)
+
+    @property
+    def admin_email_whitelist(self) -> list[str]:
+        """Emails allowed to access the admin application."""
+        return self._parse_email_list(self.ADMIN_EMAIL_WHITELIST)
+
+    @property
+    def super_admin_email_whitelist(self) -> list[str]:
+        """Emails that should receive super_admin on first Google login."""
+        return self._parse_email_list(self.SUPER_ADMIN_EMAIL_WHITELIST)
+
+    def get_admin_role_for_email(self, email: str | None) -> str | None:
+        """Return the allowlisted admin role for an email, if any."""
+        if not email:
+            return None
+
+        normalized_email = email.strip().lower()
+        if normalized_email in self.super_admin_email_whitelist:
+            return "super_admin"
+        if normalized_email in self.admin_email_whitelist:
+            return "admin"
+        return None
+
+    # Firebase (optional, for ID token verification from Flutter app)
+    FIREBASE_PROJECT_ID: str | None = None
+    # Option 1: Paste JSON directly (escape quotes/newlines)
+    FIREBASE_CREDENTIALS_JSON: str | None = None
+    # Option 2: Path to service account JSON file (recommended)
+    FIREBASE_CREDENTIALS_FILE: str | None = None
+
+    # Redis
+    REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_PASSWORD: str | None = None
+    # Trusted reverse-proxy IPs (comma-separated) allowed to set X-Forwarded-For.
+    # Set to your load balancer IP(s) in production; leave empty for dev/direct deployments.
+    TRUSTED_PROXIES: str = ""
+
+    # Reminder scheduler (disabled by default for safe rollout)
+    REMINDERS_ENABLED: bool = False
+    REMINDER_DRY_RUN: bool = True
+    REMINDER_SCAN_BATCH_SIZE: int = 250
+    REMINDER_SCAN_INTERVAL_SECONDS: int = 300
+    REMINDER_DEFAULT_TIMEZONE: str = "Asia/Ho_Chi_Minh"
+
+    # Event Worker — drains the content_interaction Redis Stream and
+    # recomputes recommender insights off the request path.
+    EVENT_WORKER_DRAIN_INTERVAL_SECONDS: int = 10
+    EVENT_WORKER_DRAIN_BATCH_SIZE: int = 500
+    REMINDER_REVIEW_ROUTE: str = "/vocabulary/review"
+    APP_PUBLIC_URL: str = "http://localhost:8080"
+
+    # Deep-link / Universal Links
+    # SHA-256 fingerprint of the Android signing certificate (colon-separated hex).
+    # Debug key is pre-filled; replace with release key in production .env.
+    ANDROID_SHA256_FINGERPRINT: str = "A4:B6:A1:51:F6:7E:AA:A0:61:0C:BC:51:55:43:E6:AA:45:4B:58:9D:73:77:CF:02:75:F2:25:F7:99:1B:B1:89"
+    IOS_TEAM_ID: str = "LN798L6Y6X"
+    IOS_BUNDLE_ID: str = "com.nhthang.lexilingoApp"
+
+    # Celery. Falls back to REDIS_URL when unset.
+    CELERY_BROKER_URL: str | None = None
+    CELERY_RESULT_BACKEND: str | None = None
+
+    @property
+    def effective_celery_broker_url(self) -> str:
+        return self.CELERY_BROKER_URL or self.REDIS_URL
+
+    @property
+    def effective_celery_result_backend(self) -> str:
+        return self.CELERY_RESULT_BACKEND or self.REDIS_URL
+
+    # ── External API Keys (Phase 0+ Content Features) ──
+    YOUTUBE_API_KEY: str | None = None  # YouTube Data API v3
+    YOUTUBE_TRANSCRIPT_PROXY_URL: str | None = None
+    NEWSAPI_KEY: str | None = None  # NewsAPI.org
+    NEWSDATA_KEY: str | None = None  # NewsData.io (fallback)
+    PODCASTINDEX_KEY: str | None = None  # PodcastIndex.org
+    PODCASTINDEX_SECRET: str | None = None  # PodcastIndex.org secret
+    DICTIONARY_API_BASE_URL: str = "https://api.dictionaryapi.dev/api/v2/entries/en"
+
+    model_config = SettingsConfigDict(
+        env_file=str(PROJECT_ROOT / ".env"), case_sensitive=True, extra="ignore"
+    )
+
+    @property
+    def is_development(self) -> bool:
+        """Check if running in development mode."""
+        return self.APP_ENV == "development"
+
+    @property
+    def is_production(self) -> bool:
+        """Check if running in production mode."""
+        return self.APP_ENV == "production"
+
+    @property
+    def enable_app_cors(self) -> bool:
+        """Whether backend should emit CORS headers directly.
+
+        Default: on (safe for direct PaaS deployments).
+        Set GATEWAY_HANDLES_CORS=true to disable when an Nginx/Kong gateway
+        handles CORS via proxy_hide_header, preventing duplicate headers.
+        """
+        if self.ENABLE_APP_CORS is not None:
+            return self.ENABLE_APP_CORS
+        return not self.GATEWAY_HANDLES_CORS
+
+    @property
+    def effective_password_reset_url_base(self) -> str:
+        """Return reset URL base according to current environment."""
+        if self.is_production and self.PASSWORD_RESET_URL_BASE_PRODUCTION:
+            return self.PASSWORD_RESET_URL_BASE_PRODUCTION
+        return self.PASSWORD_RESET_URL_BASE
+
+    @property
+    def effective_email_verification_url_base(self) -> str:
+        """Return email verification URL base according to current environment."""
+        if self.is_production and self.EMAIL_VERIFICATION_URL_BASE_PRODUCTION:
+            return self.EMAIL_VERIFICATION_URL_BASE_PRODUCTION
+        return self.EMAIL_VERIFICATION_URL_BASE
+
+
+# Global settings instance
+settings = Settings()  # pyright: ignore[reportCallIssue]

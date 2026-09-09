@@ -1,0 +1,1 @@
+"""LexiLingo backend application package."""
