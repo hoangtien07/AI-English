@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="flutter-app/assets/logo/logo_1.png" alt="LexiLingo Logo" width="180" />
+<img src="flutter-app/assets/logo/logo_1.png" alt="AI-English Logo" width="180" />
 
-# LexiLingo
+# AI-English
 
-### The AI English Tutor That Actually Understands You
+### An independently maintained AI English tutor
 
 **TRACECAG · Real-Time Voice · Knowledge Graph · CEFR Assessment**
 
@@ -15,7 +15,7 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org)
 [![LangGraph](https://img.shields.io/badge/LangGraph-1.2+-ff6b35?style=for-the-badge&logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/)
 [![License](https://img.shields.io/badge/License-MIT-22c55e.svg?style=for-the-badge)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android%20%7C%20Web-8b5cf6?style=for-the-badge)](https://github.com/InfinityZero3000/LexiLingo)
+[![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android%20%7C%20Web-8b5cf6?style=for-the-badge)](https://github.com/hoangtien07/AI-English)
 
 <br/>
 
@@ -33,7 +33,7 @@
 
 ## 1. Project Overview
 
-LexiLingo is a full-stack AI English tutoring platform built as a **monorepo with 5 deployable services**. It combines a Flutter mobile app, a FastAPI backend, a Python AI service, a React admin dashboard, and an MCP agent server.
+AI-English is a full-stack AI English tutoring platform built as a **monorepo with 5 deployable services**. It is independently maintained and LexiLingo-derived; it combines a Flutter mobile app, a FastAPI backend, a Python AI service, a React admin dashboard, and an MCP agent server.
 
 ### Target users
 
@@ -189,8 +189,8 @@ Express, RedisInsight); reminder processes are in profile `workers`.
 ### Option A — Docker (recommended)
 
 ```bash
-git clone https://github.com/InfinityZero3000/LexiLingo.git
-cd LexiLingo
+git clone https://github.com/hoangtien07/AI-English.git
+cd AI-English
 
 # Copy and fill environment variables
 cp .env.example .env # root-level env for compose
@@ -342,7 +342,7 @@ Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
 
 ## 11. License
 
-MIT License — see [LICENSE](LICENSE).
+MIT License — see [LICENSE](LICENSE). The upstream MIT copyright and permission notice are preserved in full.
 
 ```
 Copyright (c) 2026 Nguyen Thang
@@ -352,8 +352,8 @@ Copyright (c) 2026 Nguyen Thang
 
 <div align="center">
 
-[Architecture Docs](docs/ARCHITECTURE.md) · [Report Issue](https://github.com/InfinityZero3000/LexiLingo/issues) · [Discussions](https://github.com/InfinityZero3000/LexiLingo/discussions)
+[Architecture Docs](docs/ARCHITECTURE.md) · [Report Issue](https://github.com/hoangtien07/AI-English/issues) · [Discussions](https://github.com/hoangtien07/AI-English/discussions)
 
-Built by [InfinityZero3000](https://github.com/InfinityZero3000)
+Maintained by [hoangtien07](https://github.com/hoangtien07). Derived from [LexiLingo](https://github.com/InfinityZero3000/LexiLingo); see the [upstream sync policy](docs/UPSTREAM_SYNC_POLICY.md).
 
 </div>

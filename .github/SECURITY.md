@@ -14,13 +14,18 @@ Include as much information as possible:
 
 ## Current Security Alerts
 
-### ⚠️ Leaked Credentials Detected
+### Repository history and credentials
 
-GitHub Secret Scanning has detected exposed credentials in the repository history. These credentials have been:
+AI-English uses an independent clean-snapshot history on `origin`; it does not
+rewrite or publish the upstream repository's history. The historical upstream
+remains a fetch-only local reference under the documented upstream-sync policy.
+Current-tree secret scans and required test gates must pass before an approved
+import is committed. Do not interpret this policy as evidence that any external
+account, credential rotation, or provider integration has been activated.
 
-1. **Revoked/Rotated** (action required by repository owner)
-2. **Removed from current files** (completed)
-3. **Added to .gitignore** (completed)
+If a credential is found, revoke or rotate it through the account owner and
+remove it from tracked material. Never copy a credential into an issue, pull
+request, commit message, or documentation.
 
 ### Action Items for Repository Owner
 
@@ -41,14 +46,11 @@ GitHub Secret Scanning has detected exposed credentials in the repository histor
    - Download new `google-services.json` and `GoogleService-Info.plist`
    - Add to local project (never commit!)
 
-3. **Git History Cleanup** (Optional but Recommended):
-   ```bash
-   # Use BFG Repo-Cleaner to remove secrets from git history
-   # https://rtyley.github.io/bfg-repo-cleaner/
-   
-   # Or use git-filter-repo (recommended by GitHub)
-   # https://github.com/newren/git-filter-repo
-   ```
+3. **Clean snapshot policy**:
+   - Do not rewrite the independent `origin` history to remediate an upstream
+     history concern.
+   - Follow [the upstream sync policy](../docs/UPSTREAM_SYNC_POLICY.md) for a
+     reviewed, provenance-recorded cherry-pick or patch instead.
 
 ## Best Practices
 

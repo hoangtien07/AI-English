@@ -8,9 +8,9 @@
 | Field | Value |
 |---|---|
 | Status | Active |
-| Current focus | Local evidence reconciled; resolve account, rights, and first-push blockers next |
-| Current phase | Final local evidence reconciled; account, rights, and first-push closure remain |
-| Last updated | 2026-09-08 |
+| Current focus | Independent repository metadata and upstream-import controls; integration gates remain open |
+| Current phase | Independent clean snapshot; local integration/account decisions remain |
+| Last updated | 2026-09-09 |
 | New repository | `https://github.com/hoangtien07/AI-English.git` |
 | Upstream reference | `https://github.com/InfinityZero3000/LexiLingo.git` (fetch only) |
 | Owned domain | `hoangtien07.me` |
@@ -39,6 +39,9 @@ Build an independently owned version of the system that:
 - [x] Free hosting is preferred for a 1–2 user demo.
 - [x] No paid hosting may be selected or purchased without discussing the measured resource need and options with the owner.
 - [x] A fresh independent data store is the default. No original user or production data may be copied.
+- [x] The clean snapshot replaces any history-rewrite plan. `origin` uses an independent orphan history; the upstream bridge stays local and private.
+- [x] Firebase CLI authentication is available for the next owned-integration wave, but no Firebase Web app has been created in this wave.
+- [x] A Gmail password is present only in ignored `backend-service/.env`; its value is not documentation or source material, and a live mail probe remains an integration gate.
 
 ## 3. Critical rules
 
@@ -69,7 +72,7 @@ Before any automated collection:
 ### 3.3 Change-management rules
 
 - Do not push to `upstream`; its push URL must remain disabled.
-- Do not push the first copy to `origin` until the secret/history audit passes.
+- Do not merge unrelated histories or push upstream refs. Import upstream changes only under `docs/UPSTREAM_SYNC_POLICY.md`.
 - Do not overwrite unrelated working-tree changes. At plan creation, these files were already modified:
   - `flutter-app/analysis_options.yaml`
   - `flutter-app/pubspec.lock`
@@ -244,7 +247,7 @@ or fail.
 | Firebase / service account | Owned app registration, generated config, and service-account details are not final evidence. | Firebase/OAuth lifecycle work remains blocked; config tests do not equal a registered owned app. |
 | Admin authorization | Super-admin allowlist is not owner-approved. | Do not enable or claim admin-role parity. |
 | External content | Rights and source approval are absent. | Do not scrape, import, publish, or transform external content beyond approved repository/synthetic material. |
-| First push | Destructive Git-history remediation/audit remains open. | Current-tree sentinel passing does not audit reachable history; do not make the first push. |
+| Repository history | Independent clean snapshot is the approved replacement for a history rewrite. | Preserve the orphan `origin` history; use the local/private upstream bridge only for reviewed imports. |
 | Delivery scope | Rebrand, staging, production, hosting, and mobile remain deferred. | No commit, push, deploy, account provisioning, purchase, or hosted/mobile parity claim was made. |
 
 ### 7.3 Task ledger
@@ -255,12 +258,12 @@ or fail.
 |---|---|---|
 | L0-01 | DONE | `git remote -v` shows `origin` at the owned repository. |
 | L0-02 | DONE | `git remote -v` and configured push URL show upstream push is `DISABLED`. |
-| L0-03 | BLOCKED | Current-tree independence/secret sentinel and `git diff --check` pass, but reachable-history remediation/audit remains before the first push. |
+| L0-03 | DONE | Independent clean snapshot root commit `ba243ba3881321efcbea0e68f8466ad072ac0843` replaces reachable-history remediation. Current-tree sentinel and `git diff --check` remain required for imports. |
 | L0-04 | DONE | Security review classified the current deploy inputs, Firebase/admin/SMTP boundaries, and remaining history risk; current-tree sentinel checks pass. |
 | L0-05 | DONE | Final backend, AI, admin, Flutter, data-manifest, and developer-experience gates are recorded in the validation report. |
-| L0-06 | BLOCKED | Depends on L0-03 passing and explicit owner approval; remote visibility alone is insufficient. |
+| L0-06 | BLOCKED | Requires explicit owner approval before any first push; remote visibility alone is insufficient. |
 
-`GATE-OWNERSHIP` remains open for history/security-review/owner-approval work; no push occurred.
+`GATE-OWNERSHIP` remains open only for required security evidence and owner approval before a first push; no push occurred.
 
 #### LOCAL-1 - configuration isolation
 
@@ -310,12 +313,12 @@ or fail.
 
 | ID | Final status | Evidence or remaining condition |
 |---|---|---|
-| L4-01 | NOT DONE | No final evidence of an owned Firebase app registration/configuration is recorded. |
-| L4-02 | BLOCKED | Owner must register in-scope Firebase apps and provide generated configuration through ignored/local-safe handling. |
+| L4-01 | NOT DONE | Firebase CLI is authenticated, but no owned Firebase Web app registration/configuration exists for this wave. |
+| L4-02 | BLOCKED | Owner must register in-scope Firebase apps, including the Web app when approved, and provide generated configuration through ignored/local-safe handling. |
 | L4-03 | NOT DONE | No final evidence confirms owned OAuth client origins against the registered local app. |
 | L4-04 | BLOCKED | FlutterFire generation requires L4-02's app registrations and generated configuration. |
-| L4-05 | BLOCKED | SMTP is undecided (`DEC-MAIL-001`). |
-| L4-06 | BLOCKED | Mail-flow tests require L4-05 and the chosen test/sandbox sender. |
+| L4-05 | BLOCKED | A Gmail password exists only in ignored `backend-service/.env`; it must remain untracked and is not activation evidence. The sender/configuration decision still needs owner confirmation. |
+| L4-06 | BLOCKED | A live mail probe remains the integration gate and requires the approved sender/configuration; never record the password or claim activation from local presence. |
 | L4-07 | NOT DONE | Mobile-store work is deferred and has no local acceptance evidence. |
 | L4-08 | NOT DONE | Optional production integration is deferred. |
 | L4-09 | BLOCKED | Requires approved content sources and the associated integration decision. |
@@ -351,7 +354,7 @@ or fail.
 ### 7.4 Dependency DAG and executable waves
 
 ```text
-W0 evidence/safety: L0-03 + L0-04 + L0-05 -> GATE-OWNERSHIP -> L0-06 (owner approval)
+W0 evidence/safety: L0-04 + L0-05 -> GATE-OWNERSHIP -> L0-06 (owner approval)
 
 W1 config closure: verify L1-01..L1-05 -> L1-06 + L1-07 -> GATE-CONFIG-ISOLATED
 
@@ -369,7 +372,7 @@ W6 developer experience: GATE-CONFIG-ISOLATED + GATE-LOCAL-CORE + GATE-LOCAL-AI
 ```
 
 All evidence-only waves through W3 are reconciled. The remaining executable
-work is W0 history closure, W4 owner/account decisions, W5 rights and approved
+work is W0 owner approval/security evidence, W4 owner/account decisions, W5 rights and approved
 data, and the L3-08 benchmark.
 Staging, production, hosting selection, and rebrand execution are deferred and
 are not active nodes in this local DAG.
@@ -538,7 +541,7 @@ No task is `DONE` merely because code was written. Evidence must be recorded.
 |---|---|---|---|
 | DEC-AI-001 | DONE | Local AI inference provider | Owned Gemini selected for local parity; benchmark Ollama separately if needed |
 | DEC-DATA-001 | BLOCKED | Which exact datasets are needed from the original public site | External data acquisition is not authorized; use behavior comparison only until a written rights decision exists |
-| DEC-MAIL-001 | OPEN | Development SMTP provider | Use a sandbox/free developer mail service before a production sender |
+| DEC-MAIL-001 | IN PROGRESS | Development SMTP provider | A Gmail password is local-only in ignored `backend-service/.env`; do not expose it. A successful live probe is still required before treating mail as integrated. |
 | DEC-MOBILE-001 | DEFERRED | Whether Android/iOS must be in the first hosted demo | Web-first until local parity, unless owner changes scope |
 | DEC-HOST-001 | DEFERRED | Free vs paid hosting topology | Decide from measured resources and explicit budget discussion |
 
@@ -613,15 +616,26 @@ At the beginning of every continuation:
 - Preserved user-owned worktree changes. No commit, push, deploy, scrape,
   account creation, or history rewrite occurred.
 
+### 2026-09-09 — repository metadata and upstream policy
+
+- Normalized active repository links and maintainer metadata to
+  `https://github.com/hoangtien07/AI-English` while retaining upstream and MIT
+  attribution.
+- Recorded the independent orphan clean snapshot as the approved replacement
+  for history rewriting, and added the local/private, fetch-only upstream
+  import policy with provenance, review, secret-scan, and test gates.
+- Recorded Firebase CLI authentication without claiming a Firebase Web app or
+  any external activation. Recorded that the Gmail password is only in ignored
+  `backend-service/.env`; a live mail probe remains an integration gate.
+
 ### Next executable work
 
-1. Resolve `L0-03` and `L0-06`: destructive reachable-history remediation/audit,
-   then owner approval before any first push. The current-tree security
-   classification in `L0-04` is complete.
-2. Resolve `L4-01` through `L4-06`: owned Firebase app registration/config
-   and service-account details, OAuth origins, admin super-admin allowlist,
-   and the SMTP decision (Mailpit recommended; owned Gmail App Password is the
-   alternative).
+1. Resolve `L0-06`: collect the required current-tree security evidence, then
+   obtain owner approval before any first push. Do not rewrite the independent
+   history or push upstream refs.
+2. Resolve `L4-01` through `L4-06`: register owned Firebase apps only when
+   approved (no Web app exists in this wave), confirm OAuth origins and admin
+   allowlist, and run the live mail probe after the sender decision.
 3. Resolve `L5-03` through `L5-07` and `L3-08`: source rights, authorized data
    journeys, and a controlled resource benchmark. Local README acceptance in
    `L6-07` is complete.

@@ -1,6 +1,6 @@
-# 🤝 Contributing to LexiLingo
+# 🤝 Contributing to AI-English
 
-Thank you for contributing to LexiLingo! This document provides guidelines for contributing to the project.
+Thank you for contributing to AI-English! This independently maintained project is derived from LexiLingo; the upstream attribution and MIT notice remain preserved.
 
 ## 📚 Table of Contents
 - [Getting Started](#getting-started)
@@ -22,8 +22,8 @@ Thank you for contributing to LexiLingo! This document provides guidelines for c
 ### First Time Setup
 ```bash
 # Clone the repository
-git clone https://github.com/InfinityZero3000/LexiLingo.git
-cd LexiLingo
+git clone https://github.com/hoangtien07/AI-English.git
+cd AI-English
 
 # Install dependencies
 cd flutter-app
