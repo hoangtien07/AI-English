@@ -40,8 +40,8 @@ Build an independently owned version of the system that:
 - [x] No paid hosting may be selected or purchased without discussing the measured resource need and options with the owner.
 - [x] A fresh independent data store is the default. No original user or production data may be copied.
 - [x] The clean snapshot replaces any history-rewrite plan. `origin` uses an independent orphan history; the upstream bridge stays local and private.
-- [x] Firebase CLI authentication is available for the next owned-integration wave, but no Firebase Web app has been created in this wave.
-- [x] A Gmail password is present only in ignored `backend-service/.env`; its value is not documentation or source material, and a live mail probe remains an integration gate.
+- [x] Firebase CLI authentication is available; the sole owned Web app **AI English Web** is registered in `english-5d522`, and its public Web SDK configuration is installed.
+- [x] Gmail credentials remain only in ignored `backend-service/.env`; an `EHLO -> STARTTLS -> AUTH -> NOOP` probe passed without sending mail or exposing credentials.
 
 ## 3. Critical rules
 
@@ -243,10 +243,10 @@ or fail.
 
 | Decision or blocker | Final record | Consequence |
 |---|---|---|
-| Local SMTP | `DEC-MAIL-001` remains blocked. | Choose Mailpit for local capture (recommended) or an owned Gmail App Password; never track the value. |
-| Firebase / service account | Owned app registration, generated config, and service-account details are not final evidence. | Firebase/OAuth lifecycle work remains blocked; config tests do not equal a registered owned app. |
-| Admin authorization | Super-admin allowlist is not owner-approved. | Do not enable or claim admin-role parity. |
-| External content | Rights and source approval are absent. | Do not scrape, import, publish, or transform external content beyond approved repository/synthetic material. |
+| Local SMTP | Owned Gmail with an App Password is approved and configured locally. | Authentication/transport probe passed; an actual transactional-email delivery remains a separate end-to-end check. |
+| Firebase / service account | The owned Web app and public SDK config are complete for Web-only scope. | Google provider/support email and local authorized domains still require Firebase Console confirmation; no service-account secret belongs in Flutter. |
+| Admin authorization | The owner approved one exact super-admin email and the normalized allowlist tests passed. | Keep privileges exact-address only; never grant a whole domain. |
+| External content | The owner states they have permission to copy and reuse the official-site content for the demo. | Acquisition/import remains unimplemented and must retain provenance; later course content will be teacher-authored independently. |
 | Repository history | Independent clean snapshot is the approved replacement for a history rewrite. | Preserve the orphan `origin` history; use the local/private upstream bridge only for reviewed imports. |
 | Delivery scope | Rebrand, staging, production, hosting, and mobile remain deferred. | No commit, push, deploy, account provisioning, purchase, or hosted/mobile parity claim was made. |
 
@@ -261,9 +261,10 @@ or fail.
 | L0-03 | DONE | Independent clean snapshot root commit `ba243ba3881321efcbea0e68f8466ad072ac0843` replaces reachable-history remediation. Current-tree sentinel and `git diff --check` remain required for imports. |
 | L0-04 | DONE | Security review classified the current deploy inputs, Firebase/admin/SMTP boundaries, and remaining history risk; current-tree sentinel checks pass. |
 | L0-05 | DONE | Final backend, AI, admin, Flutter, data-manifest, and developer-experience gates are recorded in the validation report. |
-| L0-06 | BLOCKED | Requires explicit owner approval before any first push; remote visibility alone is insufficient. |
+| L0-06 | DONE | The owner explicitly authorized the first push on 2026-09-09; push remains conditional on the final current-tree security/test gate. |
 
-`GATE-OWNERSHIP` remains open only for required security evidence and owner approval before a first push; no push occurred.
+`GATE-OWNERSHIP` now requires only the final current-tree security/test evidence;
+owner approval for the first push is recorded. No push has occurred yet.
 
 #### LOCAL-1 - configuration isolation
 
@@ -313,17 +314,19 @@ or fail.
 
 | ID | Final status | Evidence or remaining condition |
 |---|---|---|
-| L4-01 | NOT DONE | Firebase CLI is authenticated, but no owned Firebase Web app registration/configuration exists for this wave. |
-| L4-02 | BLOCKED | Owner must register in-scope Firebase apps, including the Web app when approved, and provide generated configuration through ignored/local-safe handling. |
-| L4-03 | NOT DONE | No final evidence confirms owned OAuth client origins against the registered local app. |
-| L4-04 | BLOCKED | FlutterFire generation requires L4-02's app registrations and generated configuration. |
-| L4-05 | BLOCKED | A Gmail password exists only in ignored `backend-service/.env`; it must remain untracked and is not activation evidence. The sender/configuration decision still needs owner confirmation. |
-| L4-06 | BLOCKED | A live mail probe remains the integration gate and requires the approved sender/configuration; never record the password or claim activation from local presence. |
+| L4-01 | DONE | Firebase CLI access was verified and the sole owned Web app **AI English Web** was created in project `english-5d522`. |
+| L4-02 | DONE | Web-only registration and generated public SDK configuration are installed; no Android/iOS app or private service-account material was created. |
+| L4-03 | BLOCKED | Firebase Console must still enable the Google provider/support email and confirm `localhost` plus `127.0.0.1` as authorized domains. |
+| L4-04 | DONE | Web SDK identifiers are wired through the fail-closed bootstrap and service-worker gates; 10 focused Flutter tests and the Web build passed. |
+| L4-05 | DONE | The owner selected Gmail, approved the exact sender/super-admin address, and the App Password remains only in ignored `backend-service/.env`. |
+| L4-06 | NOT DONE | SMTP `EHLO`, STARTTLS, authentication, and NOOP passed without sending mail; actual register/reset delivery and link handling have not yet been smoke-tested end to end. |
 | L4-07 | NOT DONE | Mobile-store work is deferred and has no local acceptance evidence. |
 | L4-08 | NOT DONE | Optional production integration is deferred. |
-| L4-09 | BLOCKED | Requires approved content sources and the associated integration decision. |
+| L4-09 | NOT DONE | The owner confirmed reuse rights for the official-site demo content; source mapping, provenance controls, and an idempotent importer remain to be implemented. |
 
-`GATE-LOCAL-INTEGRATIONS` remains open. Provider-disabled local development is not external-provider parity.
+`GATE-LOCAL-INTEGRATIONS` remains open only for Firebase Console/Google sign-in
+validation and an end-to-end transactional-email delivery smoke. Provider
+configuration and transport-level evidence do not prove those browser journeys.
 
 #### LOCAL-5 - sample data and behavioral parity
 
@@ -331,8 +334,8 @@ or fail.
 |---|---|---|
 | L5-01 | DONE | `LOCAL_DATA_PROVENANCE_MANIFEST.json` validation: 5 passed. It inventories constraints; it does not grant content rights. |
 | L5-02 | DONE | `LOCAL_PARITY_JOURNEY_LEDGER.md` is the current journey ledger and identifies its evidence boundary. |
-| L5-03 | BLOCKED | Written rights/source approval is required before external acquisition. |
-| L5-04 | BLOCKED | Requires L5-03's rights decision for any external source; existing licensed repository data and synthetic data remain permissible candidates. |
+| L5-03 | DONE | The owner recorded that they have the right to copy and reuse official-site content for this demo; provenance and demo-only boundaries still apply. |
+| L5-04 | NOT DONE | Source inventory, schema mapping, rate-safe acquisition, and an idempotent importer have not been implemented. |
 | L5-05 | BLOCKED | Requires a selected and authorized seed pipeline. |
 | L5-06 | BLOCKED | Requires populated selected seeds from L5-04/L5-05. |
 | L5-07 | BLOCKED | Requires the minimal seed schema/pipeline; personas must be synthetic. |
@@ -540,8 +543,8 @@ No task is `DONE` merely because code was written. Evidence must be recorded.
 | ID | Status | Decision | Recommended default |
 |---|---|---|---|
 | DEC-AI-001 | DONE | Local AI inference provider | Owned Gemini selected for local parity; benchmark Ollama separately if needed |
-| DEC-DATA-001 | BLOCKED | Which exact datasets are needed from the original public site | External data acquisition is not authorized; use behavior comparison only until a written rights decision exists |
-| DEC-MAIL-001 | IN PROGRESS | Development SMTP provider | A Gmail password is local-only in ignored `backend-service/.env`; do not expose it. A successful live probe is still required before treating mail as integrated. |
+| DEC-DATA-001 | IN PROGRESS | Which exact datasets are needed from the original public site | Reuse is owner-authorized for the demo; inventory and importer design remain before acquisition |
+| DEC-MAIL-001 | DONE | Development SMTP provider | Owned Gmail selected; ignored App Password plus STARTTLS authentication/NOOP probe verified without sending mail |
 | DEC-MOBILE-001 | DEFERRED | Whether Android/iOS must be in the first hosted demo | Web-first until local parity, unless owner changes scope |
 | DEC-HOST-001 | DEFERRED | Free vs paid hosting topology | Decide from measured resources and explicit budget discussion |
 
@@ -628,14 +631,26 @@ At the beginning of every continuation:
   any external activation. Recorded that the Gmail password is only in ignored
   `backend-service/.env`; a live mail probe remains an integration gate.
 
+### 2026-09-09 — owned Web integration and first-push gate
+
+- Registered exactly one Firebase Web app, **AI English Web**, in the owned
+  project and installed only its public Web SDK identifiers.
+- Added fail-closed Firebase initialization and service-worker consistency
+  coverage; 10 focused Flutter tests and the Web build passed. Facebook Web
+  sign-in remains hard-disabled.
+- Verified Gmail SMTP through `EHLO`, STARTTLS, authentication, and NOOP using
+  ignored local configuration. No email was sent and no credential was logged.
+- Recorded the owner's explicit first-push approval and demo-content reuse
+  authorization. Firebase Console Google-provider/domain validation and actual
+  transactional-email delivery remain separate acceptance checks.
+
 ### Next executable work
 
-1. Resolve `L0-06`: collect the required current-tree security evidence, then
-   obtain owner approval before any first push. Do not rewrite the independent
-   history or push upstream refs.
-2. Resolve `L4-01` through `L4-06`: register owned Firebase apps only when
-   approved (no Web app exists in this wave), confirm OAuth origins and admin
-   allowlist, and run the live mail probe after the sender decision.
-3. Resolve `L5-03` through `L5-07` and `L3-08`: source rights, authorized data
-   journeys, and a controlled resource benchmark. Local README acceptance in
-   `L6-07` is complete.
+1. Run the final current-tree security/test gate, then push only the independent
+   branch to `origin`; do not rewrite history or push upstream refs.
+2. Resolve `L4-03` and `L4-06`: complete Firebase Console Google-provider and
+   authorized-domain setup, run a browser Google sign-in smoke, and verify one
+   real transactional-email journey without recording credentials or tokens.
+3. Resolve `L5-04` through `L5-07` and `L3-08`: source inventory/import,
+   authorized data journeys, and a controlled resource benchmark. Local README
+   acceptance in `L6-07` is complete.

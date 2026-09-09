@@ -60,11 +60,13 @@ configuration values in an import record.
 
 ## Current boundaries and integration facts
 
-- Firebase CLI authentication is available, but no Firebase Web app has been
-  created in this wave. This is not evidence of an external activation.
+- Firebase CLI authentication is available and the sole owned Web app **AI
+  English Web** is registered with its public Web SDK configuration. Google
+  provider/support-email and local authorized-domain setup still require
+  Firebase Console confirmation.
 - A Gmail password exists only in ignored `backend-service/.env`. Its presence
-  must not be logged, committed, or treated as an enabled mail integration.
-  A successful live mail probe remains an integration gate.
+  must not be logged or committed. Gmail `EHLO`, STARTTLS, authentication, and
+  NOOP passed without sending an email; end-to-end delivery remains separate.
 - No import may reintroduce a dependency on original deployments, accounts,
   domains, user data, secrets, or provider configuration.
 
