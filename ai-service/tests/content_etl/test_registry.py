@@ -13,7 +13,7 @@ from api.services.content_etl.registry import (
 
 
 def test_registry_contains_only_approved_sources_and_licenses():
-    assert {source.value for source in SourceName} == {
+    legacy_seven = {
         "oewn",
         "cmudict",
         "cefr_j",
@@ -21,6 +21,21 @@ def test_registry_contains_only_approved_sources_and_licenses():
         "tatoeba",
         "librispeech",
         "common_voice",
+    }
+    # Explicitly prove the legacy seven source values remain unchanged
+    assert {
+        SourceName.OEWN.value,
+        SourceName.CMUDICT.value,
+        SourceName.CEFR_J.value,
+        SourceName.WIKIDATA.value,
+        SourceName.TATOEBA.value,
+        SourceName.LIBRISPEECH.value,
+        SourceName.COMMON_VOICE.value,
+    } == legacy_seven
+
+    # Extended enum covers legacy seven + oer_curriculum + admin_upload
+    assert {source.value for source in SourceName} == legacy_seven | {
+        "oer_curriculum",
         "admin_upload",
     }
     assert {license_id.value for license_id in AllowedLicenseId} == {
@@ -49,6 +64,7 @@ def test_large_and_per_record_corpora_are_disabled_by_default():
     assert get_source_definition(SourceName.TATOEBA).default_enabled is False
     assert get_source_definition(SourceName.LIBRISPEECH).default_enabled is False
     assert get_source_definition(SourceName.COMMON_VOICE).default_enabled is False
+    assert get_source_definition(SourceName.OER_CURRICULUM).default_enabled is False
 
     assert get_source_definition(SourceName.OEWN).default_enabled is True
     assert get_source_definition(SourceName.CMUDICT).default_enabled is True
@@ -67,11 +83,38 @@ def test_large_and_per_record_corpora_are_disabled_by_default():
         (SourceName.TATOEBA, AllowedLicenseId.CC_BY_2_0_FR),
         (SourceName.LIBRISPEECH, AllowedLicenseId.CC_BY_4_0),
         (SourceName.COMMON_VOICE, AllowedLicenseId.CC0_1_0),
+        (SourceName.OER_CURRICULUM, AllowedLicenseId.CC_BY_4_0),
         (SourceName.ADMIN_UPLOAD, AllowedLicenseId.ADMIN_OWNED),
     ],
 )
 def test_source_specific_license_allowlist(source_name, license_id):
     assert validate_source_license(source_name, license_id) == license_id
+
+
+@pytest.mark.asyncio
+async def test_oer_curriculum_has_no_remote_sync_or_download_path():
+    from api.services.content_etl.contracts import _SOURCE_ALLOWED_HOSTS
+    from api.services.content_etl.downloader import DownloadSecurityError, SecureDownloader
+
+    # OER curriculum is disabled by default
+    assert get_source_definition(SourceName.OER_CURRICULUM).default_enabled is False
+
+    # OER curriculum has no allowed remote hosts (offline-only)
+    assert _SOURCE_ALLOWED_HOSTS[SourceName.OER_CURRICULUM.value] == frozenset()
+
+    # Downloader rejects any attempt to download OER curriculum before network access
+    downloader = SecureDownloader(
+        storage=None,  # Fail-closed before storage access
+        timeout_seconds=1,
+        max_download_bytes=1024,
+        user_agent="LexiLingo-ETL-Test/1.0",
+    )
+    with pytest.raises(DownloadSecurityError, match="offline-only"):
+        await downloader.download(
+            source_name="oer_curriculum",
+            version="snapshot-1",
+            url="https://human.libretexts.org/Courses/Evergreen_Valley_College/Listening_and_Speaking_for_Beginning_English_Language_Learners",
+        )
 
 
 @pytest.mark.parametrize(

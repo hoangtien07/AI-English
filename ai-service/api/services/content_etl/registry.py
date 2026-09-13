@@ -170,6 +170,27 @@ SOURCE_REGISTRY: dict[SourceName, SourceDefinition] = {
         attribution_text="Mozilla Common Voice contributors",
         default_enabled=False,
     ),
+    SourceName.OER_CURRICULUM: SourceDefinition(
+        source_name=SourceName.OER_CURRICULUM,
+        # The checked-in snapshot provides the immutable upstream provenance
+        # URL.  This placeholder is deliberately not fetchable by ETL.
+        official_url=(
+            "https://human.libretexts.org/Courses/Evergreen_Valley_College/"
+            "Listening_and_Speaking_for_Beginning_English_Language_Learners"
+        ),
+        url_rules=(
+            SourceUrlRule(
+                "human.libretexts.org",
+                re.compile(
+                    r"^/Courses/Evergreen_Valley_College/"
+                    r"Listening_and_Speaking_for_Beginning_English_Language_Learners$"
+                ),
+            ),
+        ),
+        allowed_licenses=(AllowedLicenseId.CC_BY_4_0,),
+        attribution_text="CC BY 4.0 OER curriculum; attribution is pinned per snapshot",
+        default_enabled=False,
+    ),
     SourceName.ADMIN_UPLOAD: SourceDefinition(
         source_name=SourceName.ADMIN_UPLOAD,
         official_url="",

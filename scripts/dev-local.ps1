@@ -9,9 +9,16 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$ProjectName = "lexilingo"
 $ResetConfirmation = "DELETE-LOCAL-DATA"
 $RepositoryRoot = Split-Path -Parent $PSScriptRoot
+$projectHashAlgorithm = [Security.Cryptography.SHA256]::Create()
+try {
+    $projectPathBytes = [Text.Encoding]::UTF8.GetBytes($RepositoryRoot.ToLowerInvariant())
+    $projectHash = ([BitConverter]::ToString($projectHashAlgorithm.ComputeHash($projectPathBytes))).Replace("-", "").Substring(0, 12).ToLowerInvariant()
+} finally {
+    $projectHashAlgorithm.Dispose()
+}
+$ProjectName = "lexilingo-$projectHash"
 $ComposeFile = Join-Path $RepositoryRoot "docker-compose.dev.yml"
 $RootEnvironmentFile = Join-Path $RepositoryRoot ".env"
 $BackendEnvironmentFile = Join-Path $RepositoryRoot "backend-service/.env"
@@ -160,9 +167,11 @@ function Assert-NotRunningTests {
 }
 
 function Get-DeclaredComposeVolumes {
-    $configText = & docker compose --project-name $ProjectName --file $ComposeFile --env-file $RootEnvironmentFile config --format json
+    # Include every profile so volumes owned by the optional full/tools stacks
+    # remain part of the reset contract even when only the core stack is active.
+    $volumeNames = @(& docker compose --project-name $ProjectName --file $ComposeFile --env-file $RootEnvironmentFile --profile '*' config --volumes)
     if ($LASTEXITCODE -ne 0) { throw "Unable to resolve the local Compose volume contract." }
-    return @(($configText | ConvertFrom-Json).volumes.PSObject.Properties.Name)
+    return @($volumeNames | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 }
 
 function Get-ResetDataVolumes {
@@ -170,8 +179,22 @@ function Get-ResetDataVolumes {
     $targets = @()
     foreach ($volume in @(& docker volume ls --quiet --filter "label=com.docker.compose.project=$ProjectName")) {
         if ([string]::IsNullOrWhiteSpace($volume)) { continue }
-        $logicalName = (& docker volume inspect --format '{{ index .Labels "com.docker.compose.volume" }}' $volume).Trim()
-        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($logicalName)) { throw "Refusing reset-data because Compose volume '$volume' has an ambiguous label." }
+        # Docker Desktop's Go-template parser on Windows can strip the quoted
+        # map key in `index .Labels "com.docker.compose.volume"`, treating
+        # `com` as a template function. JSON is supported by both old and new
+        # Docker CLIs and does not depend on template quoting behavior.
+        $labelsJson = @(& docker volume inspect --format '{{json .Labels}}' $volume) -join ""
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($labelsJson)) {
+            throw "Refusing reset-data because Compose volume '$volume' has unreadable labels."
+        }
+        try {
+            $labels = $labelsJson | ConvertFrom-Json
+            $volumeLabel = $labels.PSObject.Properties['com.docker.compose.volume']
+            $logicalName = if ($null -eq $volumeLabel) { $null } else { [string]$volumeLabel.Value }
+        } catch {
+            throw "Refusing reset-data because Compose volume '$volume' has invalid label JSON."
+        }
+        if ([string]::IsNullOrWhiteSpace($logicalName)) { throw "Refusing reset-data because Compose volume '$volume' has an ambiguous label." }
         if ($logicalName -notin $declared) { throw "Refusing reset-data because Compose volume '$volume' is outside this file's declared local data contract." }
         $targets += $volume
     }
@@ -182,10 +205,14 @@ function Reset-LocalData {
     Assert-NotRunningTests
     if ($ConfirmResetData -cne $ResetConfirmation) { throw "reset-data is destructive and requires -ConfirmResetData '$ResetConfirmation'. No containers or volumes were changed." }
     Assert-CoreEnvironment
-    $volumes = Get-ResetDataVolumes
+    # PowerShell unwraps a single pipeline result to a scalar. Force an array
+    # so StrictMode permits Count for zero, one, or many matching volumes.
+    $volumes = @(Get-ResetDataVolumes)
     if ($volumes.Count -eq 0) { Write-Info "No existing local Compose data volumes were found for project '$ProjectName'; nothing was reset."; return }
     Write-Info "The following exact local Compose volumes will be removed: $($volumes -join ', ')"
-    Invoke-Compose @("stop")
+    # Stopped containers still hold references to named volumes. Remove this
+    # project's containers first, then delete only the pre-validated volumes.
+    Invoke-Compose @("--profile", "*", "down", "--remove-orphans")
     & docker volume rm -- $volumes
     if ($LASTEXITCODE -ne 0) { throw "One or more exact local Compose volumes could not be removed. No broader cleanup was attempted." }
     Write-Info "Local Compose data was reset. Run '.\\scripts\\dev-local.ps1 up-core' or '.\\scripts\\dev-local.ps1 up-full' to create fresh local data."
@@ -224,5 +251,10 @@ try {
         "reset-data" { Reset-LocalData }
     }
 } catch {
-    Stop-WithError $_.Exception.Message
+    $message = if ($null -ne $_.Exception -and -not [string]::IsNullOrWhiteSpace($_.Exception.Message)) {
+        $_.Exception.Message
+    } else {
+        [string]$_
+    }
+    Stop-WithError $message
 }

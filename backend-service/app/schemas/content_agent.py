@@ -16,6 +16,17 @@ from pydantic import (
 )
 
 CEFRLevel = Literal["A1", "A2", "B1", "B2", "C1", "C2"]
+ArtifactSourceName = Literal[
+    "oewn",
+    "cmudict",
+    "cefr_j",
+    "wikidata",
+    "tatoeba",
+    "librispeech",
+    "common_voice",
+    "oer_curriculum",
+    "admin_upload",
+]
 PartOfSpeech = Literal[
     "noun",
     "verb",
@@ -67,7 +78,7 @@ class SourceSnapshotDescriptor(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     source_id: str = Field(min_length=1, max_length=100)
-    source_name: str = Field(min_length=1, max_length=100)
+    source_name: ArtifactSourceName
     source_version: str = Field(min_length=1, max_length=64)
     snapshot_id: str = Field(min_length=1, max_length=500)
     official_url: AnyHttpUrl
@@ -132,6 +143,7 @@ class ContentAgentJobCreate(BaseModel):
             "tatoeba",
             "librispeech",
             "common_voice",
+            "oer_curriculum",
         }
         normalized = list(dict.fromkeys(item.strip().lower() for item in value))
         unknown = sorted(set(normalized) - allowed)
@@ -248,7 +260,7 @@ class ArtifactSourceManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     snapshot_id: str = Field(min_length=1, max_length=500)
-    source_name: str = Field(min_length=1, max_length=100)
+    source_name: ArtifactSourceName
     source_version: str = Field(min_length=1, max_length=64)
     official_url: AnyHttpUrl
     license_id: str = Field(min_length=1, max_length=128)

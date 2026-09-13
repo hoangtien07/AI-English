@@ -1,8 +1,10 @@
 import uuid
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import event, func, select
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -16,7 +18,10 @@ from app.models.content_agent import (
 )
 from app.models.course import Course, Lesson, Unit
 from app.models.vocabulary import VocabularyItem
+from app.schemas.content_agent import ContentAgentArtifact
+from app.schemas.vocabulary import VocabularyItemResponse
 from app.services.content_agent_apply import ContentAgentApplyService
+from app.services.content_agent_validation import validate_artifact
 from app.services.vocabulary_catalog import normalize_word
 
 
@@ -142,6 +147,55 @@ def _upload() -> ContentAgentUpload:
         rights_confirmed_at=datetime.now(UTC),
         uploader_id=uuid.uuid4(),
     )
+
+
+def test_content_agent_pos_uses_database_enum_value_without_relaxing_contract() -> None:
+    """Approved lower-case POS stays valid and binds to PostgreSQL's lower-case label."""
+    artifact = _artifact()
+    report = validate_artifact(
+        artifact,
+        admin_upload={"checksum": "b" * 64, "row_count": 8},
+    )
+    assert not report.is_blocking
+
+    vocabulary = ContentAgentArtifact.model_validate(artifact).courses[0].units[0].lessons[0].vocabulary[0]
+    bind = VocabularyItem.__table__.c.part_of_speech.type.bind_processor(postgresql.dialect())
+    assert bind is not None
+    assert bind(vocabulary.part_of_speech) == "noun"
+
+    uppercase_pos = deepcopy(artifact)
+    uppercase_pos["courses"][0]["units"][0]["lessons"][0]["vocabulary"][0]["part_of_speech"] = "NOUN"
+    invalid_report = validate_artifact(
+        uppercase_pos,
+        admin_upload={"checksum": "b" * 64, "row_count": 8},
+    )
+    assert "INVALID_POS" in {error.code for error in invalid_report.blocking_errors}
+
+
+async def test_content_agent_upsert_stores_flat_tags_compatible_with_vocabulary_response(
+    content_agent_db: AsyncSession,
+) -> None:
+    upload = _upload()
+    job = ContentAgentJob(
+        requested_by_id=None,
+        upload_id=upload.id,
+        status="preview_ready",
+        request_hash="f" * 64,
+        revision=1,
+        config={},
+        progress={"stage": "preview_ready", "percent": 100},
+        artifact=_artifact(),
+    )
+    content_agent_db.add_all([upload, job])
+    await content_agent_db.commit()
+
+    await ContentAgentApplyService.apply(content_agent_db, job.id)
+    await content_agent_db.commit()
+
+    stored = (await content_agent_db.scalars(select(VocabularyItem))).first()
+    assert stored is not None
+    assert stored.tags == ["content-agent", "admin_upload", "daily_life"]
+    assert VocabularyItemResponse.model_validate(stored).tags == stored.tags
 
 
 async def test_apply_reuses_vocabulary_and_is_idempotent(content_agent_db):

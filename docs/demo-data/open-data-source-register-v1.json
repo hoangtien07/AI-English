@@ -1,0 +1,59 @@
+{
+  "schema": "lexilingo.open-data-source-register",
+  "schema_version": 2,
+  "title": "LexiLingo repository approval register v1",
+  "sources": [
+    {
+      "source_id": "source-oewn-2025",
+      "artifact_source_name": "oewn",
+      "display_name": "Open English WordNet 2025",
+      "status": "approved",
+      "blocked_reason": null,
+      "source_version": "2025",
+      "snapshot_id": "oewn:2025:9ca6d1dcb75f822fdd66617f7d9da48142ace38dd544d6ad5e2feca1674ad3fe",
+      "raw_checksum": "9ca6d1dcb75f822fdd66617f7d9da48142ace38dd544d6ad5e2feca1674ad3fe",
+      "license_id": "CC-BY-4.0",
+      "official_url": "https://en-word.net/static/english-wordnet-2025.xml.gz",
+      "allowed_usage": ["lexical"]
+    },
+    {
+      "source_id": "source-cmudict",
+      "artifact_source_name": "cmudict",
+      "display_name": "Carnegie Mellon Pronouncing Dictionary",
+      "status": "approved",
+      "blocked_reason": null,
+      "source_version": "74790861f652b15e4ac49015a90074ad62a27690",
+      "snapshot_id": "cmudict:74790861f652b15e4ac49015a90074ad62a27690:81917843c7f44ce2b094ac63873c2c7a4cf802040792c455ba3ca406891c3d22",
+      "raw_checksum": "81917843c7f44ce2b094ac63873c2c7a4cf802040792c455ba3ca406891c3d22",
+      "license_id": "LicenseRef-CMUdict",
+      "official_url": "https://github.com/cmusphinx/cmudict",
+      "allowed_usage": ["pronunciation"]
+    },
+    {
+      "source_id": "source-cefr-j",
+      "artifact_source_name": "cefr_j",
+      "display_name": "CEFR-J Wordlist Version 1.5",
+      "status": "approved",
+      "blocked_reason": null,
+      "source_version": "d4e45b75b38f27b30dfc5c44d8c571aec7e7092f",
+      "snapshot_id": "cefr-j:d4e45b75b38f27b30dfc5c44d8c571aec7e7092f:b0dd3c635f1c9a4fdf1490c7e5b7c48e8bbe55b652ad0c9860a95f98e10ae498",
+      "raw_checksum": "b0dd3c635f1c9a4fdf1490c7e5b7c48e8bbe55b652ad0c9860a95f98e10ae498",
+      "license_id": "LicenseRef-CEFR-J-Commercial",
+      "official_url": "https://github.com/openlanguageprofiles/olp-en-cefrj",
+      "allowed_usage": ["lexical"]
+    },
+    {
+      "source_id": "source-evc-beginning-ell",
+      "artifact_source_name": "oer_curriculum",
+      "display_name": "Evergreen Valley College Beginning ELL",
+      "status": "blocked",
+      "blocked_reason": "No approved immutable offline snapshot; dynamic upstream pages and embedded media are not importable.",
+      "source_version": "2023-08-18",
+      "snapshot_id": "evc:blocked:2023-08-18",
+      "raw_checksum": null,
+      "license_id": "CC-BY-4.0",
+      "official_url": "https://human.libretexts.org/Courses/Evergreen_Valley_College/Listening_and_Speaking_for_Beginning_English_Language_Learners",
+      "allowed_usage": ["curriculum_skeleton"]
+    }
+  ]
+}

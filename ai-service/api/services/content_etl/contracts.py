@@ -8,6 +8,7 @@ import re
 from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
+from urllib.parse import unquote
 
 from pydantic_core import to_jsonable_python
 from pydantic import (
@@ -22,6 +23,27 @@ from pydantic import (
 
 SHA256_PATTERN = r"^[a-f0-9]{64}$"
 _CONTROL_CHARACTER_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_OER_HOST = "human.libretexts.org"
+_OER_PATH = (
+    "/Courses/Evergreen_Valley_College/"
+    "Listening_and_Speaking_for_Beginning_English_Language_Learners"
+)
+
+
+def _validate_oer_provenance_url(url: AnyHttpUrl) -> None:
+    host = (url.host or "").lower().rstrip(".")
+    path = str(url.path)
+    for _ in range(3):
+        decoded = unquote(path)
+        if decoded == path:
+            break
+        path = decoded
+    if host != _OER_HOST or path != _OER_PATH:
+        raise ValueError(
+            "OER curriculum official_url must be the canonical Evergreen LibreTexts URL"
+        )
+    if url.query or url.fragment:
+        raise ValueError("OER curriculum official_url must not include a query or fragment")
 
 # Allowed licenses per source — inlined to avoid circular imports with registry.
 _SOURCE_ALLOWED_LICENSES: dict[str, frozenset[str]] = {
@@ -32,6 +54,7 @@ _SOURCE_ALLOWED_LICENSES: dict[str, frozenset[str]] = {
     "tatoeba": frozenset({"CC0-1.0", "CC-BY-2.0-FR"}),
     "librispeech": frozenset({"CC-BY-4.0"}),
     "common_voice": frozenset({"CC0-1.0"}),
+    "oer_curriculum": frozenset({"CC-BY-4.0"}),
     "admin_upload": frozenset({"LicenseRef-Admin-Owned"}),
 }
 
@@ -44,6 +67,10 @@ _SOURCE_ALLOWED_HOSTS: dict[str, frozenset[str]] = {
     "tatoeba": frozenset({"tatoeba.org", "downloads.tatoeba.org"}),
     "librispeech": frozenset({"www.openslr.org", "openslr.org"}),
     "common_voice": frozenset({"datacollective.mozillafoundation.org"}),
+    # OER curriculum snapshots are checked in and never fetched by the ETL.
+    # Their immutable checksum, CC-BY 4.0 declaration, attribution, and HTTPS
+    # provenance URL are validated by the dedicated offline adapter.
+    "oer_curriculum": frozenset(),
     "admin_upload": frozenset(),
 }
 
@@ -56,6 +83,7 @@ class SourceName(str, Enum):
     TATOEBA = "tatoeba"
     LIBRISPEECH = "librispeech"
     COMMON_VOICE = "common_voice"
+    OER_CURRICULUM = "oer_curriculum"
     ADMIN_UPLOAD = "admin_upload"
 
 
@@ -197,6 +225,13 @@ class SourceRecordV2(BaseModel):
             raise ValueError("retrieved_at must include timezone information")
         return value
 
+    @field_validator("topic_ids")
+    @classmethod
+    def reject_duplicate_topic_ids(cls, value: list[str]) -> list[str]:
+        if len(value) != len(set(value)):
+            raise ValueError("topic_ids must not contain duplicates")
+        return value
+
     @field_validator(
         "record_id",
         "source_version",
@@ -225,7 +260,9 @@ class SourceRecordV2(BaseModel):
                 f"license {self.license_id.value!r} is not approved for source "
                 f"{self.source_name.value!r}"
             )
-        if self.source_name.value != "admin_upload":
+        if self.source_name.value == "oer_curriculum":
+            _validate_oer_provenance_url(self.source_url)
+        elif self.source_name.value != "admin_upload":
             allowed_hosts = _SOURCE_ALLOWED_HOSTS.get(
                 self.source_name.value,
                 frozenset(),
@@ -325,8 +362,11 @@ class SourceManifest(BaseModel):
                 f"{source_key!r}"
             )
 
-        # official_url host must be on the allowlist (not applicable for admin_upload)
-        if source_key != "admin_upload":
+        # OER curriculum provenance URLs are pinned in an offline snapshot and
+        # validated by its adapter; it is never a remote acquisition source.
+        if source_key == "oer_curriculum":
+            _validate_oer_provenance_url(self.official_url)
+        elif source_key != "admin_upload":
             allowed_hosts = _SOURCE_ALLOWED_HOSTS.get(source_key, frozenset())
             host = self.official_url.host
             if host not in allowed_hosts:

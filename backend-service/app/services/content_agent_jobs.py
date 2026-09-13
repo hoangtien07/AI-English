@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
 from datetime import UTC, datetime
 
@@ -28,9 +29,12 @@ ACTIVE_STATUSES = {
     "preview_ready",
     "applying",
 }
+_IMPORT_IDENTITY_RE = re.compile(r"^[0-9a-f]{64}$")
 TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 ALLOWED_TRANSITIONS = {
-    "queued": {"resolving_sources", "extracting", "cancelled", "failed"},
+    # Approved artifacts are independently verified by the offline importer,
+    # then enter the normal preview gate before they may be applied.
+    "queued": {"resolving_sources", "extracting", "validating", "cancelled", "failed"},
     "resolving_sources": {"loading_snapshots", "cancelled", "failed"},
     "loading_snapshots": {"normalizing_upload", "extracting", "cancelled", "failed"},
     "normalizing_upload": {"classifying", "cancelled", "failed"},
@@ -60,6 +64,63 @@ def request_hash(config: ContentAgentJobCreate) -> str:
 
 
 class ContentAgentJobService:
+    @staticmethod
+    def validate_import_identity(value: str) -> str:
+        """Accept only the normalized SHA-256 representation persisted by imports."""
+        if not isinstance(value, str) or _IMPORT_IDENTITY_RE.fullmatch(value) is None:
+            raise ValueError("import identity must be a normalized 64-character hex digest")
+        return value
+
+    @staticmethod
+    async def get_or_create_import_job(
+        db: AsyncSession,
+        *,
+        import_identity: str,
+        config: ContentAgentJobCreate,
+    ) -> tuple[ContentAgentJob, bool]:
+        """Atomically reserve one approved-artifact import identity.
+
+        The caller owns the surrounding transaction.  The unique index is the
+        cross-dialect concurrency authority; the initial locked lookup avoids
+        unnecessary conflicting inserts on PostgreSQL, while the nested
+        transaction keeps a SQLite/PostgreSQL uniqueness race recoverable.
+        """
+        identity = ContentAgentJobService.validate_import_identity(import_identity)
+        query = (
+            select(ContentAgentJob)
+            .where(ContentAgentJob.import_identity == identity)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        existing = await db.scalar(query)
+        if existing is not None:
+            return existing, False
+
+        # This namespace is deliberately separate from request_hash(): normal
+        # API job hashing and revision allocation retain their existing meaning.
+        job = ContentAgentJob(
+            requested_by_id=None,
+            upload_id=None,
+            request_hash=hashlib.sha256(
+                f"approved-artifact-import-v1:{identity}".encode("ascii")
+            ).hexdigest(),
+            import_identity=identity,
+            revision=1,
+            config=config.model_dump(mode="json"),
+            progress={"stage": "queued", "percent": 0, "counters": {}},
+        )
+        try:
+            async with db.begin_nested():
+                db.add(job)
+                await db.flush()
+        except IntegrityError:
+            # A concurrent transaction won the database-enforced reservation.
+            existing = await db.scalar(query)
+            if existing is not None:
+                return existing, False
+            raise
+        return job, True
+
     @staticmethod
     async def create(
         db: AsyncSession,
@@ -146,6 +207,11 @@ class ContentAgentJobService:
     ) -> ContentAgentJob:
         if status != job.status and status not in ALLOWED_TRANSITIONS.get(job.status, set()):
             raise ValueError(f"Invalid job transition: {job.status} -> {status}")
+        if job.status == "queued" and status == "validating":
+            try:
+                ContentAgentJobService.validate_import_identity(job.import_identity)
+            except ValueError:
+                raise ValueError("Invalid job transition: queued -> validating") from None
         now = _utcnow()
         if job.started_at is None and status not in {"queued", "cancelled"}:
             job.started_at = now

@@ -335,7 +335,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
       } else {
         currentPage = _isShowingRegister
             ? const RegisterPage()
-            : const LoginPage();
+            : const LoginPage(embeddedInAuthWrapper: true);
       }
     }
 

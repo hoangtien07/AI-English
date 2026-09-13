@@ -138,6 +138,21 @@ def test_source_record_v2_requires_payload_for_content_usage(
         SourceRecordV2.model_validate(payload)
 
 
+def test_source_record_v2_rejects_duplicate_topic_ids():
+    payload = {
+        **_record_payload(),
+        "content_usage": "topic",
+        "topic_ids": ["Q1", "Q2", "Q1"],
+    }
+    with pytest.raises(ValidationError, match="topic_ids must not contain duplicates"):
+        SourceRecordV2.model_validate(payload)
+
+    payload["topic_ids"] = ["Q1", "Q2", "Q3"]
+    payload["record_checksum"] = compute_source_record_checksum(payload)
+    record = SourceRecordV2.model_validate(payload)
+    assert record.topic_ids == ["Q1", "Q2", "Q3"]
+
+
 def test_source_manifest_is_strict_and_validates_integrity_fields():
     manifest = SourceManifest.model_validate(_manifest_payload())
 
