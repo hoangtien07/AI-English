@@ -75,6 +75,13 @@ firestore-debug.log
 key.properties
 keystore.properties
 
+# Firebase Service Worker after credential injection (generated — do not commit)
+# Commit only: web/firebase-messaging-sw.js.template
+web/firebase-messaging-sw.js
+
+# firebase_options.dart after injection contains real keys — keep gitignored
+# Commit only: lib/firebase_options.dart.example and the placeholder version
+
 # iOS Specific
 **/ios/Pods/
 **/ios/Podfile.lock
@@ -131,8 +138,9 @@ firebase-debug.log
 .env*.local
 GoogleService-Info.plist
 
-# Keep tracked Firebase options wrapper (contains public config, not private keys)
-!lib/firebase_options.dart
+# firebase_options.dart is gitignored (see "Firebase & Sensitive Data" section above).
+# After running inject_firebase_sw.py it contains real keys — never commit it.
+# Reference: lib/firebase_options.dart.example (committed, placeholder values only)
 
 # coverage
 coverage/
