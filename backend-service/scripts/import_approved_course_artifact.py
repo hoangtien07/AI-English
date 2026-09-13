@@ -290,18 +290,25 @@ def _require_local_database() -> None:
         # that URL-introduced slash. Reject relative, UNC, and backslash forms.
         if re.match(r"^/[A-Za-z]:/", decoded_path):
             decoded_path = decoded_path[1:]
-        if (
-            not decoded_path
-            or "\\" in decoded_path
-            or decoded_path.startswith("//")
-            or not re.match(r"^[A-Za-z]:/", decoded_path)
-        ):
+        if "\\" in decoded_path:
+            raise ImportValidationError("--apply requires the dedicated local SQLite development file")
+        if decoded_path.startswith("//"):
+            expected_root = expected.as_posix().lstrip("/").split("/", 1)[0]
+            candidate_root = decoded_path.lstrip("/").split("/", 1)[0]
+            if candidate_root != expected_root:
+                raise ImportValidationError("--apply requires the dedicated local SQLite development file")
+            decoded_path = "/" + decoded_path.lstrip("/")
+        is_windows_absolute = re.match(r"^[A-Za-z]:/", decoded_path) is not None
+        is_posix_absolute = decoded_path.startswith("/")
+        if not decoded_path or not (is_windows_absolute or is_posix_absolute):
             raise ImportValidationError("--apply requires the dedicated local SQLite development file")
         candidate = Path(decoded_path)
         try:
             db_path = candidate.resolve(strict=False)
         except (OSError, RuntimeError, ValueError):
             raise ImportValidationError("--apply requires the dedicated local SQLite development file") from None
+        if db_path.parent != expected.parent:
+            raise ImportValidationError("--apply requires the dedicated local SQLite development file")
         if db_path != expected or candidate.is_symlink() or not candidate.is_file():
             raise ImportValidationError("--apply requires the dedicated non-symlink local SQLite development file")
         return

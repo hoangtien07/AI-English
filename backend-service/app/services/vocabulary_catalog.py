@@ -50,20 +50,10 @@ def _database_part_of_speech(value: str) -> PartOfSpeech:
     return PartOfSpeech(value)
 
 
-def _vocabulary_tags(item: dict[str, Any]) -> dict[str, Any]:
-    """Store tags in a backward-compatible structured shape.
-
-    Preserve legacy keyed access for existing readers while also exposing the
-    flat tag list used by newer API consumers.
-    """
+def _vocabulary_tags(item: dict[str, Any]) -> list[str]:
     source = str(item.get("source_name") or "generated")
     topic = str(item.get("topic") or "general")
-    labels = list(dict.fromkeys(("content-agent", source, topic)))
-    return {
-        "source": source,
-        "topic": topic,
-        "labels": labels,
-    }
+    return list(dict.fromkeys(("content-agent", source, topic)))
 
 
 async def upsert_vocabulary_batch(
