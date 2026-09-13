@@ -73,7 +73,11 @@ class VocabularyItem(Base):
     
     # Classification
     part_of_speech: Mapped[str] = mapped_column(
-        SQLEnum(PartOfSpeech, name="part_of_speech_enum"),
+        SQLEnum(
+            PartOfSpeech,
+            name="part_of_speech_enum",
+            values_callable=lambda obj: [item.value for item in obj],
+        ),
         nullable=False,
         index=True
     )

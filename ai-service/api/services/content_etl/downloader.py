@@ -75,6 +75,10 @@ class SecureDownloader:
         expected_sha256: str | None = None,
     ) -> DownloadResult:
         source = SourceName(source_name)
+        if source == SourceName.OER_CURRICULUM:
+            raise DownloadSecurityError(
+                "OER curriculum snapshots are offline-only and cannot be downloaded"
+            )
         current_url = url
         temp_path: Path | None = None
 

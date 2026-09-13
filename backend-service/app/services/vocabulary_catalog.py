@@ -22,7 +22,7 @@ from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.vocabulary import VocabularyItem
+from app.models.vocabulary import PartOfSpeech, VocabularyItem
 
 
 def normalize_word(word: str) -> str:
@@ -38,6 +38,22 @@ def normalize_word(word: str) -> str:
     )
     normalized = re.sub(r"\s+", " ", normalized).strip()
     return normalized
+
+
+def _part_of_speech_value(value: PartOfSpeech | str) -> str:
+    """Return the canonical lower-case contract value for an enum or string."""
+    return value.value if isinstance(value, PartOfSpeech) else str(value)
+
+
+def _database_part_of_speech(value: str) -> PartOfSpeech:
+    """Bind a contract POS value through SQLAlchemy's database enum mapping."""
+    return PartOfSpeech(value)
+
+
+def _vocabulary_tags(item: dict[str, Any]) -> list[str]:
+    source = str(item.get("source_name") or "generated")
+    topic = str(item.get("topic") or "general")
+    return list(dict.fromkeys(("content-agent", source, topic)))
 
 
 async def upsert_vocabulary_batch(
@@ -71,7 +87,7 @@ async def upsert_vocabulary_batch(
 
     keys = list(seen.keys())
     norm_words = [k[0] for k in keys]
-    pos_values = [k[1] for k in keys]
+    pos_values = [_database_part_of_speech(k[1]) for k in keys]
 
     # --- Step 2: Lock existing rows (FOR UPDATE) so concurrent writers wait ---
     # SQLite doesn't support FOR UPDATE; skip locking for test environments.
@@ -95,7 +111,8 @@ async def upsert_vocabulary_batch(
 
     existing_rows = (await session.scalars(lock_q)).all()
     existing: dict[tuple[str, str], VocabularyItem] = {
-        (normalize_word(row.word), row.part_of_speech): row for row in existing_rows
+        (normalize_word(row.word), _part_of_speech_value(row.part_of_speech)): row
+        for row in existing_rows
     }
 
     # --- Step 3: Update curated fields on existing rows (never overwrite non-blank) ---
@@ -130,12 +147,9 @@ async def upsert_vocabulary_batch(
                         "translation": item.get("translation"),
                         "pronunciation": item.get("pronunciation"),
                         "audio_url": item.get("audio_url"),
-                        "part_of_speech": key[1],
+                        "part_of_speech": _database_part_of_speech(key[1]),
                         "difficulty_level": item.get("difficulty_level") or "A1",
-                        "tags": {
-                            "source": ["content-agent", item.get("source_name", "generated")],
-                            "topic": [item.get("topic", "general")],
-                        },
+                        "tags": _vocabulary_tags(item),
                     }
                 )
             stmt = pg_insert(VocabularyItem).values(rows_to_insert)
@@ -156,12 +170,9 @@ async def upsert_vocabulary_batch(
                     translation=item.get("translation"),
                     pronunciation=item.get("pronunciation"),
                     audio_url=item.get("audio_url"),
-                    part_of_speech=key[1],
+                    part_of_speech=_database_part_of_speech(key[1]),
                     difficulty_level=item.get("difficulty_level") or "A1",
-                    tags={
-                        "source": ["content-agent", item.get("source_name", "generated")],
-                        "topic": [item.get("topic", "general")],
-                    },
+                    tags=_vocabulary_tags(item),
                 )
                 session.add(new_row)
                 try:
@@ -180,7 +191,7 @@ async def upsert_vocabulary_batch(
     ).all()
 
     identity: dict[tuple[str, str], uuid.UUID] = {
-        (normalize_word(row.word), row.part_of_speech): row.id
+        (normalize_word(row.word), _part_of_speech_value(row.part_of_speech)): row.id
         for row in final_rows
     }
     return identity

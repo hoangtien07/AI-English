@@ -4,7 +4,6 @@ services:
   # ============================================
   postgres:
     image: postgres:16-alpine
-    container_name: lexilingo-postgres
     restart: unless-stopped
     deploy:
       resources:
@@ -36,7 +35,6 @@ services:
   pgadmin:
     profiles: ["tools"]
     image: dpage/pgadmin4
-    container_name: lexilingo-pgadmin
     restart: unless-stopped
     deploy:
       resources:
@@ -65,7 +63,6 @@ services:
   mongodb:
     profiles: ["full", "tools"]
     image: mongo:7.0
-    container_name: lexilingo-mongodb
     restart: unless-stopped
     deploy:
       resources:
@@ -98,7 +95,6 @@ services:
   mongo-express:
     profiles: ["tools"]
     image: mongo-express:latest
-    container_name: lexilingo-mongo-express
     restart: unless-stopped
     deploy:
       resources:
@@ -128,7 +124,6 @@ services:
   # ============================================
   redis:
     image: redis:7-alpine
-    container_name: lexilingo-redis
     restart: unless-stopped
     deploy:
       resources:
@@ -157,7 +152,6 @@ services:
   redis-ai:
     profiles: ["full", "tools"]
     image: redis:7-alpine
-    container_name: lexilingo-redis-ai
     restart: unless-stopped
     deploy:
       resources:
@@ -184,7 +178,6 @@ services:
   redisinsight:
     profiles: ["tools"]
     image: redis/redisinsight:latest
-    container_name: lexilingo-redisinsight
     restart: unless-stopped
     deploy:
       resources:
@@ -211,7 +204,6 @@ services:
     build:
       context: ./backend-service
       dockerfile: Dockerfile
-    container_name: lexilingo-backend-service
     restart: unless-stopped
     env_file:
       - ./backend-service/.env
@@ -261,7 +253,16 @@ services:
       - ./backend-service/app:/app/app
       - ./backend-service/alembic:/app/alembic
       - ./backend-service/data:/app/data
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers --forwarded-allow-ips="127.0.0.1"
+      # Immutable local import authorities; the importer reads them from the
+      # repository root it sees inside the backend container.
+      - ./docs/demo-data/open-data-source-register-v1.json:/docs/demo-data/open-data-source-register-v1.json:ro
+      - ./contracts/content-agent/exercise-types-v1.json:/contracts/content-agent/exercise-types-v1.json:ro
+    # Bootstrap migrations before development startup. Otherwise FastAPI's
+    # development create_all() path creates an unversioned schema first.
+    command:
+      - /bin/sh
+      - -c
+      - python -m scripts.bootstrap_local && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers --forwarded-allow-ips="127.0.0.1"
     networks:
       - lexilingo-network
 
@@ -270,7 +271,6 @@ services:
     build:
       context: ./backend-service
       dockerfile: Dockerfile
-    container_name: lexilingo-reminder-worker
     restart: unless-stopped
     env_file:
       - ./backend-service/.env
@@ -299,7 +299,6 @@ services:
     build:
       context: ./backend-service
       dockerfile: Dockerfile
-    container_name: lexilingo-reminder-beat
     restart: unless-stopped
     env_file:
       - ./backend-service/.env
@@ -327,7 +326,6 @@ services:
     build:
       context: ./ai-service
       dockerfile: Dockerfile
-    container_name: lexilingo-ai-service
     restart: unless-stopped
     deploy:
       resources:

@@ -58,6 +58,11 @@ class ContentAgentJob(Base):
         String(32), default="queued", nullable=False, index=True
     )
     request_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # Reserved for offline approved-artifact imports.  Legacy/API-created jobs
+    # intentionally remain NULL and are not backfilled.
+    import_identity: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
     revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     config: Mapped[dict] = mapped_column(PortableJSON, nullable=False)
     progress: Mapped[dict] = mapped_column(PortableJSON, default=dict, nullable=False)
@@ -82,6 +87,11 @@ class ContentAgentJob(Base):
     completed_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
 
     __table_args__ = (
+        Index(
+            "uq_content_agent_jobs_import_identity",
+            "import_identity",
+            unique=True,
+        ),
         Index(
             "ix_content_agent_job_hash_revision",
             "request_hash",

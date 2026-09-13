@@ -74,12 +74,15 @@ Describe 'scripts/dev-local.ps1 command safety' {
         $source | Should Not Match '(?i)compose\s+down\s+.*(?:--volumes|-v)'
     }
 
-    It 'uses the deterministic lexilingo Compose project identity for every managed command' {
+    It 'uses a deterministic worktree-specific Compose project identity for every managed command' {
         $source = Get-Content -Raw -LiteralPath $scriptPath
+        $compose = Get-Content -Raw -LiteralPath (Join-Path $repoRoot 'docker-compose.dev.yml')
 
-        $source | Should Match '\$ProjectName\s*=\s*"lexilingo"'
+        $source | Should Match 'SHA256'
+        $source | Should Match '\$ProjectName\s*=\s*"lexilingo-\$projectHash"'
         $source | Should Match 'compose\s+--project-name\s+\$ProjectName'
         $source | Should Match 'label=com\.docker\.compose\.project=\$ProjectName'
+        $compose | Should Not Match '(?m)^\s*container_name:'
     }
 
     It 'keeps management-tool credentials out of core and full environment requirements' {
@@ -123,8 +126,19 @@ Describe 'scripts/dev-local.ps1 command safety' {
 
         $source | Should Match 'function Get-DeclaredComposeVolumes'
         $source | Should Match 'function Get-ResetDataVolumes'
+        $source | Should Match '"--profile", "\*"'
+        $source | Should Match 'config --volumes'
         $source | Should Match 'com\.docker\.compose\.volume'
+        $source | Should Match 'ConvertFrom-Json'
+        $source | Should Match 'down\", \"--remove-orphans'
+        $source | Should Match '\$volumes\s*=\s*@\(Get-ResetDataVolumes\)'
         $source | Should Match 'docker volume rm -- \$volumes'
         $source | Should Not Match '(?i)docker\s+volume\s+prune'
+    }
+
+    It 'bootstraps the development database with Alembic before starting Uvicorn' {
+        $compose = Get-Content -Raw -LiteralPath (Join-Path $repoRoot 'docker-compose.dev.yml')
+
+        $compose | Should Match 'python -m scripts\.bootstrap_local && exec uvicorn'
     }
 }

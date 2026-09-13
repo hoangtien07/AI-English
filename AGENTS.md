@@ -29,6 +29,7 @@
 4. **Spawn security-reviewer** when touching: auth routes, JWT handling, DB migrations, env/config files.
 5. **Spawn code-reviewer** before any PR — use `/code-review` skill.
 6. **Spawn kaiser** for quarterly debt audits, before major refactors, or when a module starts accumulating complexity.
+7. **Risk-based focused tests only** — run the smallest set of high-value test cases that covers the changed behavior, critical regressions, and failure paths. Do not run broad/full suites by default; expand only when a focused failure or release-level risk justifies it.
 
 ## Task Decomposition (Large Tasks)
 
@@ -55,7 +56,8 @@ Query before starting: `memory.search_nodes("LexiLingo")` to load prior context.
 - Spawn agents for tasks under 30 min of single-agent work.
 - Have two agents edit the same file concurrently.
 - Skip the test-writer for any new public API endpoint.
-- Commit without running `flutter analyze` (Flutter) or `pytest` (backend).
+- Run broad/full test suites by default when focused critical tests are sufficient.
+- Commit without running the relevant focused `flutter analyze`/test target (Flutter) or focused `pytest` node(s) (backend).
 
 <!-- ASTRYX:START -->
 Astryx v0.1.3 · 90+ components

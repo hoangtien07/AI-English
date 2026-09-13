@@ -27,7 +27,8 @@ void main() {
                   value.startsWith('YOUR_'),
             );
 
-        expect(DefaultFirebaseOptions.web.projectId, 'english-5d522');
+        // When placeholders are active (clean checkout / CI without secrets),
+        // isWebConfigured will be false — this is the expected safe state.
         expect(DefaultFirebaseOptions.isWebConfigured, !hasPlaceholder);
         expect(DefaultFirebaseOptions.isConfigured, kIsWeb);
         expect(DefaultFirebaseOptions.isReady, isFalse);

@@ -13,7 +13,12 @@ import 'register_page.dart';
 import 'package:lexilingo_app/core/theme/app_theme.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  const LoginPage({super.key, this.embeddedInAuthWrapper = false});
+
+  /// When true, [AuthWrapper] owns the post-authentication transition.
+  /// Standalone login routes must return to `/` after authentication so the
+  /// wrapper can select onboarding or the main learner surface.
+  final bool embeddedInAuthWrapper;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -115,6 +120,16 @@ class _LoginPageState extends State<LoginPage> {
         ),
       ),
     );
+  }
+
+  void _finishSuccessfulAuthentication(AuthProvider authProvider) {
+    if (!mounted ||
+        !authProvider.isAuthenticated ||
+        widget.embeddedInAuthWrapper) {
+      return;
+    }
+
+    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
 
   @override
@@ -387,6 +402,9 @@ class _LoginPageState extends State<LoginPage> {
                                     await _persistCredentialPreference();
                                     if (!mounted) return;
                                     setState(() => _failedAttempts = 0);
+                                    _finishSuccessfulAuthentication(
+                                      authProvider,
+                                    );
                                   } else if (_isEmailNotVerifiedMessage(
                                     authProvider.errorMessage,
                                   )) {
@@ -538,6 +556,9 @@ class _LoginPageState extends State<LoginPage> {
                                   ? null
                                   : () async {
                                       await authProvider.signInWithGoogle();
+                                      _finishSuccessfulAuthentication(
+                                        authProvider,
+                                      );
                                     },
                               icon: const Icon(Icons.g_mobiledata, size: 26),
                               label: const Text('Google'),
@@ -558,6 +579,9 @@ class _LoginPageState extends State<LoginPage> {
                                   ? null
                                   : () async {
                                       await authProvider.signInWithFacebook();
+                                      _finishSuccessfulAuthentication(
+                                        authProvider,
+                                      );
                                     },
                               icon: const Icon(Icons.facebook, size: 22),
                               label: const Text('Facebook'),

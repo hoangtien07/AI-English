@@ -98,6 +98,7 @@
             "tatoeba",
             "librispeech",
             "common_voice",
+            "oer_curriculum",
             "admin_upload"
           ]
         },

@@ -28,16 +28,17 @@ void main() {
   );
 
   test('Firebase client identifiers remain Web configuration fields', () {
-    expect(DefaultFirebaseOptions.web.projectId, 'english-5d522');
-    expect(
+    // When placeholders are set, isWebConfigured will be false — this is
+    // the expected state in CI / clean checkouts without injected secrets.
+    final hasPlaceholder = [
+      DefaultFirebaseOptions.web.apiKey,
       DefaultFirebaseOptions.web.appId,
-      '1:403021618812:web:4bd9f953967280ddc4b3f9',
-    );
-    expect(DefaultFirebaseOptions.web.projectId, isNotEmpty);
-    expect(DefaultFirebaseOptions.web.messagingSenderId, isNotEmpty);
-    expect(DefaultFirebaseOptions.web.apiKey, isNotEmpty);
-    expect(DefaultFirebaseOptions.web.appId, isNotEmpty);
-    expect(DefaultFirebaseOptions.web.measurementId, 'G-QQ057LF052');
+      DefaultFirebaseOptions.web.messagingSenderId,
+      DefaultFirebaseOptions.web.projectId,
+      DefaultFirebaseOptions.web.authDomain,
+    ].any((v) => v == null || v.startsWith('YOUR_'));
+
+    expect(DefaultFirebaseOptions.isWebConfigured, !hasPlaceholder);
     expect(DefaultFirebaseOptions.isFacebookWebSignInEnabled, isFalse);
   });
 

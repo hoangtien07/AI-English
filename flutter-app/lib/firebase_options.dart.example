@@ -16,6 +16,10 @@ import 'package:firebase_core/firebase_core.dart'
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 class DefaultFirebaseOptions {
+  /// Facebook is intentionally unavailable on Web; Google is the sole owned
+  /// Firebase Web identity provider.
+  static const bool isFacebookWebSignInEnabled = false;
+
   /// Firebase client identifiers are public configuration, not server secrets.
   /// This project intentionally supports Firebase on Web only.
   static bool get isWebConfigured =>
@@ -46,10 +50,10 @@ class DefaultFirebaseOptions {
   static const FirebaseOptions web = FirebaseOptions(
     apiKey: 'YOUR_WEB_API_KEY',
     appId: 'YOUR_WEB_APP_ID',
-    messagingSenderId: '403021618812',
-    projectId: 'english-5d522',
-    authDomain: 'english-5d522.firebaseapp.com',
-    storageBucket: 'english-5d522.firebasestorage.app',
+    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
+    projectId: 'YOUR_PROJECT_ID',
+    authDomain: 'YOUR_AUTH_DOMAIN',
+    storageBucket: 'YOUR_STORAGE_BUCKET',
     measurementId: 'YOUR_MEASUREMENT_ID',
   );
 }
