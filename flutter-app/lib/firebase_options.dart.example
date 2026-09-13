@@ -16,6 +16,10 @@ import 'package:firebase_core/firebase_core.dart'
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 class DefaultFirebaseOptions {
+  /// Facebook is intentionally unavailable on Web; Google is the sole owned
+  /// Firebase Web identity provider.
+  static const bool isFacebookWebSignInEnabled = false;
+
   /// Firebase client identifiers are public configuration, not server secrets.
   /// This project intentionally supports Firebase on Web only.
   static bool get isWebConfigured =>
