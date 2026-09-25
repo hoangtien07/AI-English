@@ -11,6 +11,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  independence-sentinel:
+    name: Independence and Secret Sentinel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Reject legacy runtime coupling and credential literals
+        run: |
+          python scripts/tests/test_verify_independent_config.py
+          python scripts/security/verify_independent_config.py
+
   # ──────────────────────────────────────────────
   # Backend — pytest + coverage
   # ──────────────────────────────────────────────

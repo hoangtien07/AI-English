@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:lexilingo_app/firebase_options.dart';
 
 import '../utils/app_logger.dart';
 
@@ -34,8 +35,8 @@ class GoogleSignInService {
             serverClientId: kIsWeb
                 ? null
                 : (dotenv.env['GOOGLE_SERVER_CLIENT_ID']?.isNotEmpty == true
-                    ? dotenv.env['GOOGLE_SERVER_CLIENT_ID']
-                    : null),
+                      ? dotenv.env['GOOGLE_SERVER_CLIENT_ID']
+                      : null),
           );
 
   /// Sign in with Google and return the Firebase ID token.
@@ -61,6 +62,15 @@ class GoogleSignInService {
   /// Extracts the Google ID token from the OAuth credential (not the Firebase
   /// ID token), so the backend's verify_google_token still works.
   Future<String?> _signInWeb() async {
+    final firebaseEnabled =
+        dotenv.maybeGet('FIREBASE_ENABLED')?.trim().toLowerCase() == 'true' &&
+        DefaultFirebaseOptions.isReady;
+    if (!firebaseEnabled) {
+      throw StateError(
+        'Google Sign-In is disabled until owned Firebase web configuration is complete.',
+      );
+    }
+
     final provider = GoogleAuthProvider()
       ..addScope('email')
       ..addScope('profile')
@@ -106,7 +116,7 @@ class GoogleSignInService {
   /// Consume pending Google credential after signInWithRedirect().
   /// Returns Google id_token if present.
   Future<String?> consumePendingWebRedirectIdToken() async {
-    if (!kIsWeb) return null;
+    if (!kIsWeb || !DefaultFirebaseOptions.isReady) return null;
 
     try {
       final redirectResult = await FirebaseAuth.instance.getRedirectResult();
@@ -235,7 +245,7 @@ class GoogleSignInService {
     try {
       if (!kIsWeb) {
         await _googleSignIn.signOut();
-      } else {
+      } else if (DefaultFirebaseOptions.isReady) {
         await FirebaseAuth.instance.signOut();
       }
       logInfo(_tag, 'Google Sign Out successful');
@@ -247,6 +257,7 @@ class GoogleSignInService {
   /// Check if user is currently signed in
   Future<bool> isSignedIn() async {
     if (kIsWeb) {
+      if (!DefaultFirebaseOptions.isReady) return false;
       return FirebaseAuth.instance.currentUser != null;
     }
     return await _googleSignIn.isSignedIn();

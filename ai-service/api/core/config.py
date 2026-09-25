@@ -161,14 +161,15 @@ class Settings(BaseSettings):
     # ============================================================
     ALLOWED_ORIGINS: Union[str, List[str]] = Field(
         default=[
-            "https://lexilingo.me",
-            "https://www.lexilingo.me",
-            "https://admin.lexilingo.me",
+            "http://localhost:8080",
+            "http://127.0.0.1:8080",
+            "http://localhost:5176",
+            "http://127.0.0.1:5176",
         ],
         validation_alias=AliasChoices("ALLOWED_ORIGINS", "CORS_ORIGINS"),
     )
     CORS_ALLOW_ORIGIN_REGEX: str = (
-        r"https?://([a-zA-Z0-9-]+\.)*lexilingo\.me(:\d+)?"
+        r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
     )
     CORS_ALLOW_PRIVATE_NETWORK: bool = True
 
@@ -245,7 +246,13 @@ class Settings(BaseSettings):
         if any("localhost" in origin or "127.0.0.1" in origin for origin in origins):
             raise ValueError("Localhost CORS origins are not allowed when ENVIRONMENT=production")
 
-        if "devtunnels.ms" in self.CORS_ALLOW_ORIGIN_REGEX or "github.dev" in self.CORS_ALLOW_ORIGIN_REGEX:
+        unescaped_regex = self.CORS_ALLOW_ORIGIN_REGEX.replace("\\", "")
+        if ".*" in self.CORS_ALLOW_ORIGIN_REGEX:
+            raise ValueError("Unbounded CORS regex is not allowed in production")
+        if "localhost" in unescaped_regex or "127.0.0.1" in unescaped_regex:
+            raise ValueError("Localhost CORS regex is not allowed in production")
+
+        if "devtunnels.ms" in unescaped_regex or "github.dev" in unescaped_regex:
             raise ValueError("Broad development tunnel CORS regex is not allowed in production")
 
         if self.CONTENT_ETL_ENABLED:
@@ -350,6 +357,7 @@ class Settings(BaseSettings):
     # API Keys (for external services)
     # ============================================================
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
     HUGGINGFACE_API_KEY: str = os.getenv("HUGGINGFACE_API_KEY", "")
     
     # ============================================================
@@ -434,6 +442,10 @@ class Settings(BaseSettings):
         "sentence-transformers/all-MiniLM-L6-v2"
     )
     EMBEDDING_DEVICE: str = os.getenv("EMBEDDING_DEVICE", "cpu")
+    GEMINI_EMBEDDING_MODEL: str = os.getenv(
+        "GEMINI_EMBEDDING_MODEL", "models/gemini-embedding-001"
+    )
+    GEMINI_EMBEDDING_DIM: int = Field(default=384, gt=0, le=3072)
     
     # ============================================================
     # Rate Limiting

@@ -6,6 +6,7 @@ import asyncio
 import logging
 
 from api.services.stt.config import STTConfig
+from api.services.stt.errors import STTPrimaryNotReadyError
 from api.services.stt.engines.faster_whisper import (
     FasterWhisperVerifier,
     WhisperChunkPrimary,
@@ -27,7 +28,9 @@ class STTModelRegistry:
             config.verify_compute_type,
             config.verify_beam_size,
         )
-        self.primary = primary or MoonshinePrimary(config.primary_model)
+        self.primary = primary or MoonshinePrimary(
+            config.primary_model, config.moonshine_model_dir
+        )
         self.status = "unavailable"
         self.verifier_status = (
             "disabled" if not config.verify_enabled else "unavailable"
@@ -88,7 +91,7 @@ class STTModelRegistry:
 
     async def create_primary_session(self, language: str):
         if self.status not in {"ready", "degraded"}:
-            raise RuntimeError("STT primary model is not ready")
+            raise STTPrimaryNotReadyError("STT primary model is not ready")
         return await self.primary.create_session(language)
 
     async def verify(self, audio: AudioSegment, language: str) -> VerificationResult:

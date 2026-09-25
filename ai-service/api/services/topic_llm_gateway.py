@@ -103,7 +103,7 @@ class TopicLLMGateway:
         if genai and settings.GEMINI_API_KEY:
             try:
                 genai.configure(api_key=settings.GEMINI_API_KEY)  # type: ignore[attr-defined]
-                self.gemini_model = genai.GenerativeModel("gemini-pro")  # type: ignore[attr-defined]
+                self.gemini_model = genai.GenerativeModel(settings.GEMINI_MODEL)  # type: ignore[attr-defined]
             except Exception as e:
                 logger.warning(f"Failed to configure Gemini: {e}")
 
@@ -283,7 +283,7 @@ Respond as your character. Include [💡 Tip] or [📘] notes if the user made e
             content=response.text,
             provider=LLMProvider.GEMINI,
             latency_ms=latency_ms,
-            model_name="gemini-pro",
+            model_name=settings.GEMINI_MODEL,
         )
 
     async def health_check(self) -> Dict[str, bool]:

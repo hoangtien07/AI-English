@@ -32,11 +32,21 @@ class FasterWhisperVerifier:
         async with self._load_lock:
             if self._model is not None:
                 return
+            # Faster-Whisper treats model IDs such as ``base.en`` as a request
+            # to fetch from Hugging Face.  This service only permits an
+            # existing local directory, so a cold verifier cache fails closed
+            # instead of producing a hidden network side effect at runtime.
+            model_path = Path(self.model_name)
+            if not model_path.is_dir():
+                raise FileNotFoundError(
+                    "Faster-Whisper verification requires an existing local "
+                    f"model directory, not model ID {self.model_name!r}"
+                )
             from faster_whisper import WhisperModel
 
             self._model = await asyncio.to_thread(
                 WhisperModel,
-                self.model_name,
+                str(model_path),
                 device=self.device,
                 compute_type=self.compute_type,
             )

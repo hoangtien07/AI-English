@@ -6,6 +6,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from api.services.stt.moonshine_assets import resolve_tiny_streaming_model_dir
+
 
 def _bool(name: str, default: bool) -> bool:
     return os.getenv(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
@@ -13,7 +15,9 @@ def _bool(name: str, default: bool) -> bool:
 
 @dataclass(frozen=True)
 class STTConfig:
-    enabled: bool = True
+    # Local STT is opt-in.  A missing cache must leave the service usable,
+    # rather than trigger a network download while starting a request worker.
+    enabled: bool = False
     sample_rate: int = 16000
     channels: int = 1
     audio_format: str = "pcm16"
@@ -22,6 +26,9 @@ class STTConfig:
     primary_engine: str = "moonshine"
     primary_model: str = "tiny_streaming"
     primary_device: str = "cpu"
+    moonshine_model_dir: str = (
+        "models/moonshine/tiny-streaming-en/quantized_26_07_30"
+    )
     fallback_primary_engine: str = "sherpa"
     sherpa_model_dir: str = (
         "models/sherpa/sherpa-onnx-streaming-zipformer-en-20M-2023-02-17"
@@ -61,7 +68,7 @@ class STTConfig:
     session_stop_timeout_seconds: float = 3.0
     downstream_response_timeout_seconds: float = 35.0
     resume_window_seconds: int = 30
-    degraded_whisper_primary: bool = True
+    degraded_whisper_primary: bool = False
     legacy_upload_max_bytes: int = 10 * 1024 * 1024
     emit_candidate_events: bool = False
 
@@ -69,7 +76,7 @@ class STTConfig:
     def from_env(cls) -> "STTConfig":
         legacy_model = os.getenv("STT_MODEL_NAME") or os.getenv("WHISPER_MODEL_SIZE")
         return cls(
-            enabled=_bool("STT_ENABLED", True),
+            enabled=_bool("STT_ENABLED", False),
             sample_rate=int(os.getenv("STT_SAMPLE_RATE", "16000")),
             channels=int(os.getenv("STT_CHANNELS", "1")),
             audio_format=os.getenv("STT_AUDIO_FORMAT", "pcm16"),
@@ -78,6 +85,10 @@ class STTConfig:
             primary_engine=os.getenv("STT_PRIMARY_ENGINE", "moonshine"),
             primary_model=os.getenv("STT_PRIMARY_MODEL", "tiny_streaming"),
             primary_device=os.getenv("STT_PRIMARY_DEVICE", "cpu"),
+            moonshine_model_dir=os.getenv(
+                "STT_MOONSHINE_MODEL_DIR",
+                "models/moonshine/tiny-streaming-en/quantized_26_07_30",
+            ),
             fallback_primary_engine=os.getenv("STT_FALLBACK_PRIMARY_ENGINE", "sherpa"),
             sherpa_model_dir=os.getenv(
                 "STT_SHERPA_MODEL_DIR",
@@ -140,7 +151,7 @@ class STTConfig:
                 os.getenv("STT_DOWNSTREAM_RESPONSE_TIMEOUT_SECONDS", "35")
             ),
             resume_window_seconds=int(os.getenv("STT_RESUME_WINDOW_SECONDS", "30")),
-            degraded_whisper_primary=_bool("STT_DEGRADED_WHISPER_PRIMARY", True),
+            degraded_whisper_primary=_bool("STT_DEGRADED_WHISPER_PRIMARY", False),
             legacy_upload_max_bytes=int(
                 os.getenv("STT_LEGACY_UPLOAD_MAX_BYTES", str(10 * 1024 * 1024))
             ),
@@ -158,6 +169,12 @@ class STTConfig:
             raise ValueError("STT_CONFIDENCE_ACCEPT must be >= STT_CONFIDENCE_VERIFY")
         if not 0 <= self.confidence_verify <= self.confidence_accept <= 1:
             raise ValueError("STT confidence thresholds must be between 0 and 1")
+        if self.enabled:
+            # Only the reviewed cache can reach the native model loader.  The
+            # disabled default deliberately does not inspect an absent cache.
+            resolve_tiny_streaming_model_dir(
+                self.moonshine_model_dir, service_root=Path.cwd()
+            )
         for value in (
             self.audio_queue_max_frames,
             self.max_active_sessions,

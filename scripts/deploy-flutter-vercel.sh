@@ -7,6 +7,15 @@
 
 set -euo pipefail
 
+if [[ "${ENABLE_HOSTED_DEPLOYMENTS:-}" != "1" ]]; then
+  echo "Hosted deployment is disabled. Set ENABLE_HOSTED_DEPLOYMENTS=1 only after owner approval."
+  exit 1
+fi
+
+: "${DEPLOY_API_BASE_URL:?Set DEPLOY_API_BASE_URL from ignored environment input}"
+: "${DEPLOY_AI_SERVICE_URL:?Set DEPLOY_AI_SERVICE_URL from ignored environment input}"
+: "${DEPLOY_GOOGLE_SERVER_CLIENT_ID:?Set DEPLOY_GOOGLE_SERVER_CLIENT_ID from ignored environment input}"
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -99,7 +108,6 @@ printf "${GREEN}✓${NC} Vercel target project: %s\n\n" "$VERCEL_PROJECT_ID"
 printf "${BLUE}[2/7] Validating production env files...${NC}\n\n"
 
 required_files=(
-  ".env.production"
   "vercel.json"
   "web/index.html"
   "lib/firebase_options.dart"
@@ -112,10 +120,10 @@ for f in "${required_files[@]}"; do
   fi
 done
 
-google_id_env="$(grep '^GOOGLE_SERVER_CLIENT_ID=' .env.production | cut -d '=' -f2- || true)"
+google_id_env="$DEPLOY_GOOGLE_SERVER_CLIENT_ID"
 google_id_meta="$(grep -o 'google-signin-client_id" content="[^"]*"' web/index.html | sed 's/.*content="\([^"]*\)"/\1/' || true)"
-api_base_url="$(grep '^API_BASE_URL=' .env.production | cut -d '=' -f2- || true)"
-ai_base_url="$(grep '^AI_SERVICE_URL=' .env.production | cut -d '=' -f2- || true)"
+api_base_url="$DEPLOY_API_BASE_URL"
+ai_base_url="$DEPLOY_AI_SERVICE_URL"
 
 if [[ -z "$google_id_env" ]]; then
   printf "${RED}✗${NC} GOOGLE_SERVER_CLIENT_ID is missing in .env.production\n"
@@ -135,14 +143,14 @@ if [[ "$google_id_env" != "$google_id_meta" ]]; then
   exit 1
 fi
 
-if [[ "$api_base_url" != "https://api.lexilingo.me/api/v1" ]]; then
-  printf "${RED}✗${NC} API_BASE_URL must be https://api.lexilingo.me/api/v1 in .env.production\n"
+if [[ "$api_base_url" != https://* ]]; then
+  printf "${RED}✗${NC} DEPLOY_API_BASE_URL must be an HTTPS URL\n"
   printf "  Current value: %s\n" "$api_base_url"
   exit 1
 fi
 
-if [[ "$ai_base_url" != "https://api.lexilingo.me/api/v1" ]]; then
-  printf "${RED}✗${NC} AI_SERVICE_URL must be https://api.lexilingo.me/api/v1 in .env.production\n"
+if [[ "$ai_base_url" != https://* ]]; then
+  printf "${RED}✗${NC} DEPLOY_AI_SERVICE_URL must be an HTTPS URL\n"
   printf "  Current value: %s\n" "$ai_base_url"
   exit 1
 fi
@@ -155,6 +163,7 @@ API_BASE_URL=${api_base_url}
 API_BASE_URL_FALLBACK=
 AI_SERVICE_URL=${ai_base_url}
 AI_SERVICE_URL_FALLBACK=
+FIREBASE_ENABLED=false
 ENABLE_VOICE_FEATURE=true
 ENABLE_GAMIFICATION=true
 ENABLE_STARTER_REWARD=false
@@ -229,5 +238,5 @@ printf "${GREEN}╚════════════════════�
 printf "${BLUE}Post-deploy quick checks:${NC}\n"
 printf "  1. Open login page and test Google sign-in popup/redirect\n"
 printf "  2. Confirm API base URL in browser console is production\n"
-printf "  3. Verify Firebase authorized domains include lexilingo.me and www.lexilingo.me\n"
-printf "  4. Verify Vercel project has custom domains lexilingo.me and www.lexilingo.me\n\n"
+printf "  3. Verify Firebase authorized domains include only owned domains\n"
+printf "  4. Verify Vercel project has only explicitly approved custom domains\n\n"

@@ -1,4 +1,5 @@
 import json
+import os
 import stat
 from argparse import Namespace
 from uuid import UUID
@@ -82,7 +83,10 @@ def test_main_writes_unique_seeded_identities_with_private_permissions(
     assert seeded == ids
     assert {record["user_id"] for record in records} == {str(item) for item in ids}
     assert len({record["token"] for record in records}) == 3
-    assert stat.S_IMODE(output.stat().st_mode) == 0o600
+    # Windows does not expose POSIX mode bits through stat(), but the
+    # generator still uses the secure temporary-file creation path there.
+    if os.name != "nt":
+        assert stat.S_IMODE(output.stat().st_mode) == 0o600
     stdout = capsys.readouterr().out
     assert "private-token" not in stdout
     assert "seeded 3 load identities" in stdout

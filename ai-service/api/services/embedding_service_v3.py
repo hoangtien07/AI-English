@@ -30,6 +30,8 @@ class EmbeddingServiceV3:
             settings, "EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
         )
         self._device = getattr(settings, "EMBEDDING_DEVICE", "cpu")
+        self._gemini_model = settings.GEMINI_EMBEDDING_MODEL
+        self._gemini_dim = settings.GEMINI_EMBEDDING_DIM
 
     def _should_force_fallback(self) -> tuple[bool, str | None]:
         if os.getenv("V3_FORCE_HASH_EMBEDDINGS", "").strip() in {"1", "true", "yes"}:
@@ -95,7 +97,12 @@ class EmbeddingServiceV3:
             return np.empty((0, self._fallback_dim), dtype=np.float32)
 
         # Attempt Gemini Cloud Embeddings first if configured
-        prefer_cloud = os.getenv("TRACECAG_PREFER_CLOUD_LLM", "true").lower() in {
+        # Keep embedding-provider selection independent from chat-provider
+        # selection. Rebuilding the local KG can encode thousands of concepts;
+        # opting that workload into a paid cloud API must be explicit.
+        prefer_cloud = os.getenv(
+            "TRACECAG_PREFER_CLOUD_EMBEDDINGS", "false"
+        ).lower() in {
             "1",
             "true",
             "yes",
@@ -111,8 +118,9 @@ class EmbeddingServiceV3:
                 rows: list[list[float]] = []
                 for text in texts:
                     response = genai.embed_content(
-                        model="models/text-embedding-004",
+                        model=self._gemini_model,
                         content=text,
+                        output_dimensionality=self._gemini_dim,
                     )
                     emb = (
                         response.get("embedding")

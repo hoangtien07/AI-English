@@ -156,6 +156,61 @@ def test_websocket_rejects_duplex_start_when_feature_disabled(monkeypatch, tmp_p
             assert event["message"] == "Duplex voice is disabled"
 
 
+def test_websocket_reports_unavailable_primary_model(monkeypatch, tmp_path):
+    """Disabled/missing STT weights must be an actionable protocol error."""
+    monkeypatch.setenv("SECRET_KEY", "test-secret")
+    config = STTConfig(temp_dir=str(tmp_path), verify_enabled=False)
+    registry = STTModelRegistry(config, primary=FakePrimary(), verifier=FakeVerifier())
+    registry.status = "disabled"
+    manager = SessionManager(config, registry)
+    monkeypatch.setattr(stt_route, "get_stt_config", lambda: config)
+    monkeypatch.setattr(stt_route, "get_stt_sessions", lambda: manager)
+    monkeypatch.setattr(stt_route, "enforce_user_quota", AsyncMock(return_value=None))
+    app = FastAPI()
+    app.include_router(stt_route.router, prefix="/api/v1/stt")
+
+    with TestClient(app) as client:
+        with client.websocket_connect(
+            "/api/v1/stt/stream",
+            headers={"Authorization": f"Bearer {_access_token()}"},
+        ) as socket:
+            socket.send_json({"type": "start", "session_id": "s1", "user_id": "u1"})
+            event = socket.receive_json()
+
+    assert event["type"] == "stt.error"
+    assert event["code"] == STTErrorCode.PRIMARY_STT_FAILED.value
+    assert event["message"] == "STT primary model is not ready"
+
+
+def test_websocket_does_not_label_unrelated_runtime_error_as_missing_model(
+    monkeypatch, tmp_path
+):
+    """Only the registry's unavailable-model error has the stable STT code."""
+    monkeypatch.setenv("SECRET_KEY", "test-secret")
+    config = STTConfig(temp_dir=str(tmp_path), verify_enabled=False)
+    registry = STTModelRegistry(config, primary=FakePrimary(), verifier=FakeVerifier())
+    registry.status = "ready"
+    manager = SessionManager(config, registry)
+    manager.create = AsyncMock(side_effect=RuntimeError("unexpected startup failure"))
+    monkeypatch.setattr(stt_route, "get_stt_config", lambda: config)
+    monkeypatch.setattr(stt_route, "get_stt_sessions", lambda: manager)
+    monkeypatch.setattr(stt_route, "enforce_user_quota", AsyncMock(return_value=None))
+    app = FastAPI()
+    app.include_router(stt_route.router, prefix="/api/v1/stt")
+
+    with TestClient(app) as client:
+        with client.websocket_connect(
+            "/api/v1/stt/stream",
+            headers={"Authorization": f"Bearer {_access_token()}"},
+        ) as socket:
+            socket.send_json({"type": "start", "session_id": "s1", "user_id": "u1"})
+            event = socket.receive_json()
+
+    assert event["type"] == "stt.error"
+    assert event["code"] == STTErrorCode.INTERNAL_ERROR.value
+    assert event["message"] == "Internal server error"
+
+
 def test_websocket_start_ack_and_stop(monkeypatch, tmp_path):
     monkeypatch.setenv("SECRET_KEY", "test-secret")
     config = STTConfig(

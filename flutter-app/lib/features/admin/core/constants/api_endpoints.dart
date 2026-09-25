@@ -1,5 +1,7 @@
+import 'package:lexilingo_app/core/network/api_config.dart';
+
 class ApiEndpoints {
-  static const String baseUrl = 'https://api.lexilingo.me/api/v1';
+  static String get baseUrl => ApiConfig.baseUrl;
 
   // Auth
   static const String userLogin = '/auth/login';

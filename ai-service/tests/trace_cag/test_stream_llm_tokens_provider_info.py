@@ -34,9 +34,23 @@ class _FakeStreamCtx:
 class _FakeHttpxClient:
     def __init__(self, response: _FakeStreamResponse) -> None:
         self._response = response
+        self.stream_calls: list[tuple[tuple, dict]] = []
 
     def stream(self, *args, **kwargs):
+        self.stream_calls.append((args, kwargs))
         return _FakeStreamCtx(self._response)
+
+
+class _FakeJsonResponse:
+    status_code = 200
+
+    @staticmethod
+    def json() -> dict:
+        return {
+            "candidates": [
+                {"content": {"parts": [{"text": "Configured Gemini response"}]}}
+            ]
+        }
 
 
 def _groq_sse(*deltas: str) -> list[str]:
@@ -96,12 +110,15 @@ async def test_provider_info_reports_gemini_when_groq_yields_nothing(monkeypatch
     monkeypatch.setattr("api.core.groq_key_pool.release_groq_key", AsyncMock())
     monkeypatch.setattr("api.core.groq_key_pool.record_groq_key_usage", AsyncMock())
     monkeypatch.setenv("GEMINI_API_KEY", "fake-gemini-key")
+    monkeypatch.setenv("GEMINI_MODEL", "models/gemini-env-test")
 
     groq_failure_response = _FakeStreamResponse(500, [])
     gemini_response = _FakeStreamResponse(200, _gemini_sse("Xin ", "chào"))
+    groq_client = _FakeHttpxClient(groq_failure_response)
+    gemini_client = _FakeHttpxClient(gemini_response)
 
     def _fake_client(name: str):
-        return _FakeHttpxClient(groq_failure_response if name == "groq" else gemini_response)
+        return groq_client if name == "groq" else gemini_client
 
     monkeypatch.setattr(generate, "_get_httpx_client", _fake_client)
 
@@ -117,4 +134,53 @@ async def test_provider_info_reports_gemini_when_groq_yields_nothing(monkeypatch
     ]
 
     assert "".join(tokens) == "Xin chào"
-    assert provider_info == {"provider": "gemini", "model": "gemini-2.0-flash"}
+    assert provider_info == {"provider": "gemini", "model": "gemini-env-test"}
+    assert gemini_client.stream_calls[0][0][1] == (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        "gemini-env-test:streamGenerateContent?alt=sse"
+    )
+
+
+@pytest.mark.asyncio
+async def test_generate_node_uses_configured_gemini_url_and_model_metadata(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-gemini-key")
+    monkeypatch.setenv("GEMINI_MODEL", "models/gemini-env-test")
+    monkeypatch.setenv("TRACECAG_ENABLE_LOCAL_LLAMA_KV", "false")
+    monkeypatch.setattr(
+        "api.core.groq_key_pool.get_available_groq_key",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(generate, "_update_ranker_from_generation", lambda **kwargs: None)
+    requests: list[dict] = []
+
+    async def _fake_post_json(**kwargs):
+        requests.append(kwargs)
+        return _FakeJsonResponse()
+
+    monkeypatch.setattr(generate, "_throttled_post_json", _fake_post_json)
+
+    result = await generate.generate_node(
+        {
+            "user_input": "Help me practice English.",
+            "session_id": "session-gemini-model",
+            "learner_profile": {"level": "B1"},
+            "conversation_history": [],
+            "diagnosis_errors": [],
+            "diagnosis_intent": "correct",
+            "retrieved_context": "",
+            "retrieval_trace": [],
+            "grammar_score": 0.8,
+            "fluency_score": 0.8,
+            "vocabulary_level": "B1",
+            "cache_policy": "off",
+        }
+    )
+
+    assert result["tutor_response"] == "Configured Gemini response"
+    assert result["models_used"] == ["gemini-env-test"]
+    assert len(requests) == 1
+    assert requests[0]["provider"] == "gemini"
+    assert requests[0]["url"] == (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        "gemini-env-test:generateContent"
+    )

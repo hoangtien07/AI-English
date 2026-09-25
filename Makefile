@@ -38,7 +38,7 @@ test: ## Run Flutter tests in $(APP_DIR)
 
 .PHONY: run-web
 run-web: ## Run app on Chrome (web)
-	@cd $(APP_DIR) && $(FLUTTER) run -d chrome
+	@cd $(APP_DIR) && $(FLUTTER) run -d chrome --web-port=8080
 
 .PHONY: run-ios
 run-ios: ## Run app on iOS simulator (macOS only)

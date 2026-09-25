@@ -18,11 +18,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install dependencies
 COPY requirements.txt constraints-ai.txt ./
 RUN pip install --no-cache-dir --upgrade pip && \
+    mkdir -p /tmp/moonshine-wheel && \
+    pip download --no-deps --only-binary=:all: --dest /tmp/moonshine-wheel \
+      moonshine-voice==0.1.3 && \
+    echo "c48f852c353688da551c2ba73c7e6103bb8ca6d212b1723f07c053ee50722f55  /tmp/moonshine-wheel/moonshine_voice-0.1.3-py3-none-manylinux_2_34_x86_64.whl" | sha256sum -c - && \
+    pip install --no-cache-dir --no-deps /tmp/moonshine-wheel/moonshine_voice-0.1.3-py3-none-manylinux_2_34_x86_64.whl && \
+    rm -rf /tmp/moonshine-wheel && \
     pip install --no-cache-dir -c constraints-ai.txt -r requirements.txt \
       --extra-index-url https://download.pytorch.org/whl/cpu
 
 # Copy application code
 COPY api ./api
+COPY service ./service
 
 # The L2 external-knowledge corpus. DocumentIntelligenceService reads
 # data/external_docs at startup and silently indexes nothing when the directory
@@ -31,7 +38,7 @@ COPY api ./api
 COPY data/external_docs ./data/external_docs
 
 # Fail the image build if direct ETL runtime imports are missing.
-RUN python -c "import defusedxml, typer; from api.services.content_etl.cli import app"
+RUN python -c "import defusedxml, typer; from api.services.content_etl.cli import app; import service.tracecag_service"
 
 # Create models directory if not exists
 RUN mkdir -p /app/models

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import html
 import logging
 import smtplib
-import html
+import ssl
 from email.message import EmailMessage
 from pathlib import Path
 from urllib.parse import quote
@@ -20,6 +21,25 @@ _TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "templates"
 
 class EmailService:
     """SMTP-based email sender with lightweight HTML template rendering."""
+
+    @staticmethod
+    def _log_unsent_link(kind: str, to_email: str, url: str) -> None:
+        if settings.is_development:
+            logger.warning(
+                "SMTP_HOST not configured. %s email was not sent. "
+                "Generated local URL for %s: %s",
+                kind,
+                to_email,
+                url,
+            )
+            return
+
+        logger.error(
+            "SMTP_HOST not configured. %s email was not sent to %s; "
+            "tokenized URL suppressed outside development.",
+            kind,
+            to_email,
+        )
 
     @staticmethod
     def _render_template(template_name: str, context: dict[str, str]) -> str:
@@ -38,16 +58,26 @@ class EmailService:
             raise ValueError("SMTP_USERNAME and SMTP_PASSWORD are required")
 
         timeout = settings.SMTP_TIMEOUT
+        tls_context = ssl.create_default_context()
 
         if settings.SMTP_USE_SSL:
-            with smtplib.SMTP_SSL(smtp_host, settings.SMTP_PORT, timeout=timeout) as server:
+            with smtplib.SMTP_SSL(
+                smtp_host,
+                settings.SMTP_PORT,
+                timeout=timeout,
+                context=tls_context,
+            ) as server:
                 server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
                 server.send_message(message)
             return
 
         with smtplib.SMTP(smtp_host, settings.SMTP_PORT, timeout=timeout) as server:
+            server.ehlo()
             if settings.SMTP_USE_TLS:
-                server.starttls()
+                if not server.has_extn("starttls"):
+                    raise smtplib.SMTPNotSupportedError("SMTP server does not support STARTTLS")
+                server.starttls(context=tls_context)
+                server.ehlo()
             server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
             server.send_message(message)
 
@@ -68,12 +98,7 @@ class EmailService:
         reset_link = f"{settings.effective_password_reset_url_base}?token={encoded_token}"
 
         if not settings.SMTP_HOST:
-            logger.warning(
-                "SMTP_HOST not configured. Password reset email was not sent. "
-                "Generated reset URL for %s: %s",
-                to_email,
-                reset_link,
-            )
+            cls._log_unsent_link("Password reset", to_email, reset_link)
             return False
 
         html_context = {
@@ -123,12 +148,7 @@ class EmailService:
         encoded_token = quote(token, safe="")
         verify_link = f"{settings.effective_email_verification_url_base}?token={encoded_token}"
         if not settings.SMTP_HOST:
-            logger.warning(
-                "SMTP_HOST not configured. Verification email was not sent. "
-                "Generated verification URL for %s: %s",
-                to_email,
-                verify_link,
-            )
+            cls._log_unsent_link("Verification", to_email, verify_link)
             return False
 
         html_context = {
@@ -221,12 +241,12 @@ class EmailService:
             return False
 
     @staticmethod
-    def _build_otp_message(to_email: str, otp: str, display_name: str) -> "EmailMessage":
+    def _build_otp_message(to_email: str, otp: str, display_name: str) -> EmailMessage:
         """Build an EmailMessage containing an admin login OTP."""
         from email.message import EmailMessage as _EM
         msg = _EM()
         msg["Subject"] = "LexiLingo Admin — Your login code"
-        msg["From"] = settings.EMAIL_FROM or "noreply@lexilingo.me"
+        msg["From"] = settings.EMAIL_FROM or "noreply@localhost"
         msg["To"] = to_email
         text = (
             f"Hi {display_name},\n\n"

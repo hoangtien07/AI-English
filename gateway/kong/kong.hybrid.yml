@@ -9,22 +9,16 @@ _transform: true
 consumers:
   - username: mobile-app
     custom_id: mobile-app
-    keyauth_credentials:
-      - key: replace-mobile-key
     acls:
       - group: mobile-app
 
   - username: admin-web
     custom_id: admin-web
-    keyauth_credentials:
-      - key: replace-admin-key
     acls:
       - group: admin-web
 
   - username: internal-backend
     custom_id: internal-backend
-    keyauth_credentials:
-      - key: replace-internal-key
     acls:
       - group: internal
 
@@ -32,9 +26,8 @@ plugins:
   - name: cors
     config:
       origins:
-        - https://lexilingo.me
-        - https://www.lexilingo.me
-        - https://admin.lexilingo.me
+        - ${PUBLIC_WEB_ORIGIN}
+        - ${ADMIN_WEB_ORIGIN}
       methods:
         - GET
         - POST
@@ -81,7 +74,7 @@ plugins:
 
 services:
   - name: backend-service
-    url: https://lexilingo-backend.onrender.com
+    url: ${BACKEND_UPSTREAM_URL}
     routes:
       - name: backend-health
         paths:
@@ -160,7 +153,7 @@ services:
               hide_client_headers: false
 
   - name: ai-service
-    url: https://ai.lexilingo.me
+    url: ${AI_UPSTREAM_URL}
     routes:
       - name: ai-health
         paths:

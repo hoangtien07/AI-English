@@ -7,10 +7,11 @@ Using Pydantic settings for type-safe configuration
 import os
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Annotated
 
 from dotenv import load_dotenv
-from pydantic import field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import EmailStr, Field, TypeAdapter, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Get project root directory and load environment files explicitly.
 # Always load .env first, then override with .env.production in production mode.
@@ -19,6 +20,27 @@ load_dotenv(PROJECT_ROOT / ".env")
 if os.getenv("APP_ENV", "").lower() == "production":
     # Do not use override=True here because it overwrites real container environment variables!
     load_dotenv(PROJECT_ROOT / ".env.production", override=False)
+
+
+_email_adapter = TypeAdapter(EmailStr)
+
+
+def _parse_exact_email_allowlist(raw_value: str) -> list[str]:
+    """Return de-duplicated, case-normalized exact email addresses only."""
+    normalized_emails: list[str] = []
+    for raw_email in raw_value.split(","):
+        candidate = raw_email.strip()
+        if not candidate:
+            continue
+        if "*" in candidate:
+            raise ValueError("admin email allowlists accept exact email addresses only")
+        try:
+            normalized = str(_email_adapter.validate_python(candidate)).casefold()
+        except ValueError as exc:
+            raise ValueError("admin email allowlists must contain valid email addresses") from exc
+        if normalized not in normalized_emails:
+            normalized_emails.append(normalized)
+    return normalized_emails
 
 
 class Settings(BaseSettings):
@@ -43,11 +65,13 @@ class Settings(BaseSettings):
                 return True
         return value
 
-    @field_validator("LEARNER_STATE_INTERNAL_TOKEN_PREVIOUS_EXPIRES_AT")
+    @field_validator("LEARNER_STATE_INTERNAL_TOKEN_PREVIOUS_EXPIRES_AT", mode="before")
     @classmethod
-    def validate_previous_token_expiry(cls, value: datetime | None) -> datetime | None:
-        if value is None:
+    def validate_previous_token_expiry(cls, value):
+        if value is None or (isinstance(value, str) and not value.strip()):
             return None
+        if isinstance(value, str):
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("previous learner-state token expiry must include a timezone")
         return value.astimezone(UTC)
@@ -112,13 +136,15 @@ class Settings(BaseSettings):
     ENABLE_APP_CORS: bool | None = None
     GATEWAY_HANDLES_CORS: bool = False
     ALLOWED_ORIGINS: str = (
-        "https://lexilingo.me,https://www.lexilingo.me,https://admin.lexilingo.me"
+        "http://localhost:8080,http://127.0.0.1:8080,"
+        "http://localhost:5176,http://127.0.0.1:5176"
     )
-    CORS_ALLOW_ORIGIN_REGEX: str = r"https?://([a-zA-Z0-9-]+\.)*lexilingo\.me(:\d+)?"
-    ALLOWED_HOSTS: list[str] = [
-        "api.lexilingo.me",
-        "*.lexilingo.me",
-        "lexilingo-backend.onrender.com",
+    CORS_ALLOW_ORIGIN_REGEX: str = (
+        r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+    )
+    ALLOWED_HOSTS: Annotated[list[str], NoDecode] = [
+        "localhost",
+        "127.0.0.1",
     ]
 
     @field_validator("ALLOWED_HOSTS", mode="before")
@@ -145,6 +171,10 @@ class Settings(BaseSettings):
 
         if self.SECRET_KEY.strip().lower().startswith(("your-secret", "change_me", "replace_")):
             raise ValueError("SECRET_KEY must be a real secret when APP_ENV=production")
+        if len(self.SECRET_KEY.strip()) < 32:
+            raise ValueError(
+                "SECRET_KEY must be at least 32 characters when APP_ENV=production"
+            )
 
         if self.enable_app_cors:
             origins = self.cors_origins
@@ -161,6 +191,14 @@ class Settings(BaseSettings):
             # usually escaped ("devtunnels\.ms") — strip backslashes before
             # substring-matching or this check silently never fires.
             unescaped_regex = self.CORS_ALLOW_ORIGIN_REGEX.replace("\\", "")
+            if ".*" in self.CORS_ALLOW_ORIGIN_REGEX:
+                raise ValueError(
+                    "Unbounded CORS regex is not allowed when APP_ENV=production"
+                )
+            if "localhost" in unescaped_regex or "127.0.0.1" in unescaped_regex:
+                raise ValueError(
+                    "Localhost CORS regex is not allowed when APP_ENV=production"
+                )
             if "devtunnels.ms" in unescaped_regex or "github.dev" in unescaped_regex:
                 raise ValueError("Broad development tunnel CORS regex is not allowed in production")
 
@@ -206,6 +244,19 @@ class Settings(BaseSettings):
                     "outside the repo (e.g. /run/secrets/firebase.json)"
                 )
 
+        smtp_host = (self.SMTP_HOST or "").strip().lower()
+        if smtp_host:
+            if not (self.SMTP_USERNAME or "").strip() or not (self.SMTP_PASSWORD or "").strip():
+                raise ValueError("SMTP_USERNAME and SMTP_PASSWORD are required when SMTP_HOST is set")
+            if not self.EMAIL_FROM.strip():
+                raise ValueError("EMAIL_FROM is required when SMTP_HOST is set")
+            if self.SMTP_USE_TLS == self.SMTP_USE_SSL:
+                raise ValueError("configure exactly one of SMTP_USE_TLS or SMTP_USE_SSL")
+            if smtp_host == "smtp.gmail.com" and (
+                self.SMTP_PORT != 587 or not self.SMTP_USE_TLS or self.SMTP_USE_SSL
+            ):
+                raise ValueError("Gmail SMTP requires STARTTLS on smtp.gmail.com:587")
+
         return self
 
     # Logging
@@ -221,15 +272,15 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str | None = None
     SMTP_USE_TLS: bool = True
     SMTP_USE_SSL: bool = False
-    SMTP_TIMEOUT: int = 10
+    SMTP_TIMEOUT: int = Field(default=10, ge=1, le=30)
     EMAIL_FROM: str = "noreply@lexilingo.app"
     PASSWORD_RESET_URL_BASE: str = "lexilingo-app://reset-password"
     PASSWORD_RESET_URL_BASE_PRODUCTION: str | None = None
-    EMAIL_VERIFICATION_URL_BASE: str = "https://lexilingo.me/verify-email"
+    EMAIL_VERIFICATION_URL_BASE: str = "http://localhost:8080/#/verify-email"
     EMAIL_VERIFICATION_URL_BASE_PRODUCTION: str | None = None
 
     # AI Service (optional)
-    AI_SERVICE_URL: str = "https://api.lexilingo.me/api/v1"
+    AI_SERVICE_URL: str = "http://127.0.0.1:8001/api/v1"
     AI_AUDIT_INGEST_SECRET: str = ""
     LEARNER_STATE_ENABLED: bool = False
     LEARNER_STATE_INTERNAL_TOKEN: str = ""
@@ -266,6 +317,40 @@ class Settings(BaseSettings):
     ADMIN_EMAIL_WHITELIST: str = ""
     SUPER_ADMIN_EMAIL_WHITELIST: str = ""
 
+    @field_validator("SMTP_USERNAME", "EMAIL_FROM", mode="before")
+    @classmethod
+    def normalize_smtp_email(cls, value):
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("SMTP sender values must be email addresses")
+        candidate = value.strip()
+        if not candidate:
+            return candidate
+        try:
+            return str(_email_adapter.validate_python(candidate)).casefold()
+        except ValueError as exc:
+            raise ValueError("SMTP sender values must be valid email addresses") from exc
+
+    @field_validator("SMTP_HOST", mode="before")
+    @classmethod
+    def normalize_smtp_host(cls, value):
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("SMTP_HOST must be a hostname")
+        return value.strip().casefold() or None
+
+    @field_validator("ADMIN_EMAIL_WHITELIST", "SUPER_ADMIN_EMAIL_WHITELIST", mode="before")
+    @classmethod
+    def validate_admin_email_allowlists(cls, value) -> str:
+        if value is None:
+            return ""
+        if not isinstance(value, str):
+            raise ValueError("admin email allowlists must be comma-separated strings")
+        _parse_exact_email_allowlist(value)
+        return value
+
     # RevenueCat (server-side entitlement verification)
     REVENUECAT_SECRET_API_KEY: str | None = None
     REVENUECAT_TIMEOUT_SECONDS: float = 5.0
@@ -273,7 +358,7 @@ class Settings(BaseSettings):
     @staticmethod
     def _parse_email_list(raw_value: str) -> list[str]:
         """Normalize a comma-separated email allowlist."""
-        return [email.strip().lower() for email in raw_value.split(",") if email.strip()]
+        return _parse_exact_email_allowlist(raw_value)
 
     @property
     def admin_email_whitelist(self) -> list[str]:
@@ -323,7 +408,7 @@ class Settings(BaseSettings):
     EVENT_WORKER_DRAIN_INTERVAL_SECONDS: int = 10
     EVENT_WORKER_DRAIN_BATCH_SIZE: int = 500
     REMINDER_REVIEW_ROUTE: str = "/vocabulary/review"
-    APP_PUBLIC_URL: str = "https://lexilingo.me"
+    APP_PUBLIC_URL: str = "http://localhost:8080"
 
     # Deep-link / Universal Links
     # SHA-256 fingerprint of the Android signing certificate (colon-separated hex).

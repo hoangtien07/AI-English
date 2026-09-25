@@ -15,8 +15,9 @@ services:
     startCommand: bash scripts/entrypoint.sh
     healthCheckPath: /health
     
-    # Auto-deploy on git push
-    autoDeploy: true
+    # Hosting is intentionally undecided. Enable only after the deployment
+    # checklist in docs/INDEPENDENT_DEVELOPMENT_PLAN.md is approved.
+    autoDeploy: false
     branch: main
     
     # Environment variables
@@ -27,7 +28,7 @@ services:
       
       # AI Service (public production gateway)
       - key: AI_SERVICE_URL
-        value: https://api.lexilingo.me/api/v1
+        sync: false
 
       - key: AI_ADMIN_API_KEY
         sync: false  # Must match ai-service AI_ADMIN_API_KEY
@@ -58,11 +59,11 @@ services:
       # Set GATEWAY_HANDLES_CORS=true only if you add an Nginx/Kong gateway
       # in front of this service (gateway must use proxy_hide_header to avoid duplicates).
       - key: ALLOWED_ORIGINS
-        value: https://lexilingo.me,https://www.lexilingo.me,https://admin.lexilingo.me
+        sync: false
       - key: CORS_ALLOW_ORIGIN_REGEX
-        value: https?://([a-zA-Z0-9-]+\.)*lexilingo\.me(:\d+)?
+        sync: false
       - key: ALLOWED_HOSTS
-        value: api.lexilingo.me,lexilingo-backend.onrender.com
+        sync: false
       
       # Environment
       - key: APP_ENV
@@ -91,11 +92,11 @@ services:
       - key: SMTP_PASSWORD
         sync: false  # Nhập manual: Gmail App Password (not the account password)
       - key: EMAIL_FROM
-        value: thefirestar312@gmail.com
+        sync: false
       - key: PASSWORD_RESET_URL_BASE_PRODUCTION
-        value: lexilingo-app://reset-password
+        sync: false
       - key: EMAIL_VERIFICATION_URL_BASE_PRODUCTION
-        value: https://lexilingo.me/verify-email
+        sync: false
 
       # Redis (optional - dùng Upstash free tier)
       - key: REDIS_URL
@@ -116,7 +117,7 @@ services:
       pip install --upgrade pip
       pip install -r requirements.txt
     startCommand: celery -A app.core.celery_app:celery_app worker --loglevel=INFO --concurrency=1
-    autoDeploy: true
+    autoDeploy: false
     branch: main
     envVars:
       - key: DATABASE_URL
@@ -146,7 +147,7 @@ services:
       pip install --upgrade pip
       pip install -r requirements.txt
     startCommand: celery -A app.core.celery_app:celery_app beat --loglevel=INFO
-    autoDeploy: true
+    autoDeploy: false
     branch: main
     envVars:
       - key: DATABASE_URL

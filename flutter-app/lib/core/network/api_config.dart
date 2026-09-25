@@ -40,17 +40,16 @@ class ApiConfig {
     final envUrl = _normalizedEnvUrl('API_BASE_URL');
     if (envUrl != null) {
       if (_mustUseProductionBackend && _isTransientFallbackUrl(envUrl)) {
-        // In production hosts, never allow fallback infra URLs to become
-        // primary API endpoints due to env drift.
-        return AppConstants.apiBaseUrl;
+        throw StateError(
+          'API_BASE_URL must point to an owned production endpoint.',
+        );
       }
       if (!_mustUseProductionBackend || !_isLoopbackUrl(envUrl)) {
         return envUrl;
       }
     }
-    return _shouldUseLocalFallback
-        ? AppConstants.localApiBaseUrl
-        : AppConstants.apiBaseUrl;
+    if (_shouldUseLocalFallback) return AppConstants.localApiBaseUrl;
+    throw StateError('API_BASE_URL is required for this build.');
   }
 
   /// Host root, without the `/api/v1` suffix.
@@ -73,7 +72,7 @@ class ApiConfig {
       return ''; // production không fallback về local
     }
     final envUrl = _normalizedEnvUrl('API_BASE_URL_FALLBACK');
-    return envUrl ?? AppConstants.apiBaseUrl;
+    return envUrl ?? '';
   }
 
   // ── AI Service URL ───────────────────────────────────────────────────────────
@@ -83,22 +82,23 @@ class ApiConfig {
     final envUrl = _normalizedEnvUrl('AI_SERVICE_URL');
     if (envUrl != null) {
       if (_mustUseProductionBackend && _isTransientFallbackUrl(envUrl)) {
-        return AppConstants.aiServiceUrl;
+        throw StateError(
+          'AI_SERVICE_URL must point to an owned production endpoint.',
+        );
       }
       if (!_mustUseProductionBackend || !_isLoopbackUrl(envUrl)) {
         return envUrl;
       }
     }
-    return _shouldUseLocalFallback
-        ? AppConstants.localAiServiceUrl
-        : AppConstants.aiServiceUrl;
+    if (_shouldUseLocalFallback) return AppConstants.localAiServiceUrl;
+    throw StateError('AI_SERVICE_URL is required for this build.');
   }
 
   /// AIS URL dự phòng.
   static String get fallbackAiServiceUrl {
     if (_mustUseProductionBackend) return '';
     final envUrl = _normalizedEnvUrl('AI_SERVICE_URL_FALLBACK');
-    return envUrl ?? AppConstants.aiServiceUrl;
+    return envUrl ?? '';
   }
 
   // ── Timeouts ─────────────────────────────────────────────────────────────────
@@ -123,7 +123,8 @@ class ApiConfig {
     return normalized;
   }
 
-  static bool get _shouldUseLocalFallback => false;
+  static bool get _shouldUseLocalFallback =>
+      isDev && !_mustUseProductionBackend;
 
   static bool get _mustUseProductionBackend {
     if (kReleaseMode) return true;

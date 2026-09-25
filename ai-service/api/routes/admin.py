@@ -51,7 +51,7 @@ async def verify_admin_api_key(
 
 class AiConfig(BaseModel):
     """AI Service configuration model."""
-    model_name: str = "gemini-1.5-flash"
+    model_name: str = "gemini-3.6-flash"
     gemini_model: Optional[str] = None          # alias from frontend
     temperature: float = 0.7
     max_tokens: int = 2048
@@ -205,8 +205,8 @@ async def get_admin_config(
             # Return default config with environment variable indication
             env_key = os.getenv("GEMINI_API_KEY")
             return AiConfig(
-                model_name="gemini-1.5-flash",
-                gemini_model="gemini-1.5-flash",
+                model_name="gemini-3.6-flash",
+                gemini_model="gemini-3.6-flash",
                 gemini_api_key=mask_api_key(env_key) if env_key else None
             )
         
@@ -216,7 +216,7 @@ async def get_admin_config(
             env_key = os.getenv("GEMINI_API_KEY")
             stored_key = env_key
 
-        effective_model = config.get("gemini_model") or config.get("model_name", "gemini-1.5-flash")
+        effective_model = config.get("gemini_model") or config.get("model_name", "gemini-3.6-flash")
         return AiConfig(
             model_name=effective_model,
             gemini_model=effective_model,

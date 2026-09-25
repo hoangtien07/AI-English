@@ -2,8 +2,31 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 ENTRYPOINT = ROOT / "scripts" / "entrypoint.sh"
+
+
+def _has_working_bash() -> bool:
+    """The deployment entrypoint is Bash; Windows' WSL launcher is not Bash."""
+    try:
+        return (
+            subprocess.run(
+                ["bash", "-c", ":"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ).returncode
+            == 0
+        )
+    except OSError:
+        return False
+
+
+pytestmark = pytest.mark.skipif(
+    not _has_working_bash(), reason="requires a functioning POSIX Bash runtime"
+)
 
 
 def _write_executable(path: Path, source: str) -> None:
@@ -11,7 +34,7 @@ def _write_executable(path: Path, source: str) -> None:
     path.chmod(0o755)
 
 
-def test_fresh_database_bootstrap_uses_create_tables_and_redacts_database_url(
+def test_fresh_database_bootstrap_uses_migrations_and_redacts_database_url(
     tmp_path,
 ):
     fake_bin = tmp_path / "bin"
@@ -64,12 +87,8 @@ printf 'uvicorn %s\n' "$*" >> "$COMMAND_LOG"
     assert "private-user" not in output
     assert "super-secret" not in output
     assert "DATABASE_URL: <configured>" in output
-    assert commands[:2] == [
-        "python scripts/create_tables.py",
-        "alembic stamp head",
-    ]
-    assert commands[2].startswith("uvicorn app.main:app")
-    assert (ROOT / "scripts" / "create_tables.py").is_file()
+    assert commands[:1] == ["alembic upgrade head"]
+    assert commands[1].startswith("uvicorn app.main:app")
 
 
 def test_unreachable_probe_redacts_secret_exception_and_still_starts_api(tmp_path):
@@ -92,9 +111,7 @@ fi
 printf 'uvicorn %s\n' "$*" >> "$COMMAND_LOG"
 """,
     )
-    secret_url = (
-        "postgresql+asyncpg://secret-user:secret-password@db.internal/app_test"
-    )
+    secret_url = "postgresql+asyncpg://secret-user:secret-password@db.internal/app_test"
     env = {
         **os.environ,
         "PATH": f"{fake_bin}:{os.environ['PATH']}",
@@ -124,5 +141,5 @@ printf 'uvicorn %s\n' "$*" >> "$COMMAND_LOG"
 def test_probe_source_logs_exception_type_not_exception_message():
     source = ENTRYPOINT.read_text()
 
-    assert 'type(e).__name__' in source
+    assert "type(e).__name__" in source
     assert 'f"DB check error: {e}"' not in source

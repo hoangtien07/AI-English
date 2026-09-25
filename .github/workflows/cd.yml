@@ -1,8 +1,7 @@
 name: CD
 
 on:
-  push:
-    branches: [main, dev]
+  workflow_dispatch:
 
 concurrency:
   group: cd-${{ github.ref }}
@@ -13,6 +12,7 @@ jobs:
   # Flutter Web → Vercel
   # ──────────────────────────────────────────────
   deploy-flutter-web:
+    if: ${{ vars.ENABLE_HOSTED_DEPLOYMENTS == 'true' }}
     name: Deploy Flutter Web → Vercel
     runs-on: ubuntu-latest
 
@@ -61,14 +61,21 @@ jobs:
       - name: Create public env config for build
         env:
           GOOGLE_SERVER_CLIENT_ID: ${{ vars.GOOGLE_SERVER_CLIENT_ID }}
+          PUBLIC_API_BASE_URL: ${{ vars.PUBLIC_API_BASE_URL }}
+          PUBLIC_AI_BASE_URL: ${{ vars.PUBLIC_AI_BASE_URL }}
         run: |
           : "${GOOGLE_SERVER_CLIENT_ID:?Set GOOGLE_SERVER_CLIENT_ID repository variable}"
-          cat > assets/env/prod_config <<'EOF'
+          : "${PUBLIC_API_BASE_URL:?Set PUBLIC_API_BASE_URL repository variable}"
+          : "${PUBLIC_AI_BASE_URL:?Set PUBLIC_AI_BASE_URL repository variable}"
+          case "$PUBLIC_API_BASE_URL" in https://*) ;; *) echo "PUBLIC_API_BASE_URL must use HTTPS"; exit 1;; esac
+          case "$PUBLIC_AI_BASE_URL" in https://*) ;; *) echo "PUBLIC_AI_BASE_URL must use HTTPS"; exit 1;; esac
+          cat > assets/env/prod_config <<EOF
           ENVIRONMENT=production
-          API_BASE_URL=https://api.lexilingo.me/api/v1
+          API_BASE_URL=${PUBLIC_API_BASE_URL}
           API_BASE_URL_FALLBACK=
-          AI_SERVICE_URL=https://api.lexilingo.me/api/v1
+          AI_SERVICE_URL=${PUBLIC_AI_BASE_URL}
           AI_SERVICE_URL_FALLBACK=
+          FIREBASE_ENABLED=false
           ENABLE_VOICE_FEATURE=true
           ENABLE_GAMIFICATION=true
           ENABLE_STARTER_REWARD=false
@@ -121,6 +128,7 @@ jobs:
   # Admin Dashboard → Vercel
   # ──────────────────────────────────────────────
   deploy-admin:
+    if: ${{ vars.ENABLE_HOSTED_DEPLOYMENTS == 'true' }}
     name: Deploy Admin Dashboard → Vercel
     runs-on: ubuntu-latest
 
@@ -174,6 +182,7 @@ jobs:
   # Backend Docker → GitHub Container Registry
   # ──────────────────────────────────────────────
   build-backend-docker:
+    if: ${{ vars.ENABLE_HOSTED_DEPLOYMENTS == 'true' }}
     name: Build & Push Backend Docker Image
     runs-on: ubuntu-latest
 

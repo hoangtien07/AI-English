@@ -943,7 +943,11 @@ async def _generate_benchmark_qa_response(state: TraceCAGState, start_time: floa
                     if not gemini_key:
                         continue
                     try:
-                        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+                        gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.6-flash").removeprefix("models/")
+                        url = (
+                            "https://generativelanguage.googleapis.com/v1beta/models/"
+                            f"{gemini_model}:generateContent"
+                        )
                         request_body = {
                             "contents": [{"parts": [{"text": user_prompt}]}],
                             "system_instruction": {"parts": [{"text": system_prompt}]},
@@ -962,7 +966,7 @@ async def _generate_benchmark_qa_response(state: TraceCAGState, start_time: floa
                             candidates = data.get("candidates", [])
                             if candidates:
                                 response = candidates[0]["content"]["parts"][0]["text"].strip()
-                                model_used = "gemini-2.0-flash"
+                                model_used = gemini_model
                         else:
                             logger.warning(
                                 "[_generate_benchmark_qa_response] Gemini returned %s: %s",

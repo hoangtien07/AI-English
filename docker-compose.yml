@@ -9,11 +9,13 @@ services:
       ai-service:
         condition: service_started
     environment:
-      GATEWAY_SERVER_NAME: ${GATEWAY_SERVER_NAME:-api.lexilingo.me}
-      GATEWAY_SSL_CERT_PATH: ${GATEWAY_SSL_CERT_PATH:-/etc/letsencrypt/live/api.lexilingo.me/fullchain.pem}
-      GATEWAY_SSL_KEY_PATH: ${GATEWAY_SSL_KEY_PATH:-/etc/letsencrypt/live/api.lexilingo.me/privkey.pem}
+      GATEWAY_SERVER_NAME: ${GATEWAY_SERVER_NAME:?Set GATEWAY_SERVER_NAME in ignored production environment input}
+      GATEWAY_SSL_CERT_PATH: ${GATEWAY_SSL_CERT_PATH:?Set GATEWAY_SSL_CERT_PATH in ignored production environment input}
+      GATEWAY_SSL_KEY_PATH: ${GATEWAY_SSL_KEY_PATH:?Set GATEWAY_SSL_KEY_PATH in ignored production environment input}
+      PUBLIC_WEB_ORIGIN: ${PUBLIC_WEB_ORIGIN:?Set PUBLIC_WEB_ORIGIN in ignored production environment input}
+      ADMIN_WEB_ORIGIN: ${ADMIN_WEB_ORIGIN:?Set ADMIN_WEB_ORIGIN in ignored production environment input}
     command: >
-      /bin/sh -c "envsubst '$$GATEWAY_SERVER_NAME $$GATEWAY_SSL_CERT_PATH $$GATEWAY_SSL_KEY_PATH'
+      /bin/sh -c "envsubst '$$GATEWAY_SERVER_NAME $$GATEWAY_SSL_CERT_PATH $$GATEWAY_SSL_KEY_PATH $$PUBLIC_WEB_ORIGIN $$ADMIN_WEB_ORIGIN'
       < /etc/nginx/templates/default.conf.template
       > /etc/nginx/conf.d/default.conf
       && nginx -g 'daemon off;'"

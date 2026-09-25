@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from api.services.stt.engines.faster_whisper import FasterWhisperVerifier
 
 
@@ -22,3 +24,10 @@ def test_verifier_drops_high_no_speech_segments():
     result = verifier._transcribe_path("unused.wav", "en", 0)
     assert result.text == ""
     assert result.confidence == 0.0
+
+
+@pytest.mark.asyncio
+async def test_verifier_rejects_network_backed_model_identifiers():
+    verifier = FasterWhisperVerifier("base.en", "cpu", "int8")
+    with pytest.raises(FileNotFoundError, match="local model directory"):
+        await verifier.load()

@@ -21,7 +21,7 @@ class GeminiConfig:
     """Configuration for Gemini API."""
 
     api_key: Optional[str] = None
-    model: str = "gemini-1.5-flash"  # Fast and efficient
+    model: str = "gemini-3.6-flash"  # Stable default; override with GEMINI_MODEL
     temperature: float = 0.7
     max_output_tokens: int = 1024
     top_p: float = 0.95

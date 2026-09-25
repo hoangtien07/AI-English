@@ -114,7 +114,7 @@ async def register(
     try:
         from app.core.security import create_verification_token
         token = create_verification_token(
-            {"sub": str(user.id), "email": user.email, "type": "email_verification"},
+            {"sub": str(user.id), "email": user.email, "purpose": "email_verify"},
             expires_minutes=1440,
         )
         await EmailService.send_verification_email(
@@ -396,8 +396,9 @@ async def google_login(
         google_info = await verify_google_token(request.id_token, audience=None)
 
     # Flutter web can return a Firebase ID token instead of Google OAuth id_token.
-    # Accept only Firebase tokens issued for Google sign-in to keep auth strict.
-    if not google_info:
+    # Admin login must use the configured admin OAuth audience; a Firebase token
+    # has a different audience and must never bypass that boundary.
+    if not google_info and request.source != "admin":
         firebase_claims = await anyio.to_thread.run_sync(
             verify_firebase_token, request.id_token
         )
@@ -425,8 +426,19 @@ async def google_login(
             detail="Email not provided by Google"
         )
 
-    allowlisted_admin_role = settings.get_admin_role_for_email(email)
     email_verified = bool(google_info.get("email_verified", False))
+    allowlisted_admin_role = settings.get_admin_role_for_email(email)
+
+    if request.source == "admin" and not email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="A verified Google email is required for admin access.",
+        )
+    if request.source == "admin" and not allowlisted_admin_role:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email is not allowlisted for admin access.",
+        )
     
     # Check if user exists
     result = await db.execute(
@@ -435,12 +447,6 @@ async def google_login(
     user = result.scalar_one_or_none()
     
     if not user:
-        if request.source == "admin" and not allowlisted_admin_role:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Email is not allowlisted for admin access."
-            )
-
         username = await _ensure_unique_username(db, email.split("@")[0])
         role_slug = allowlisted_admin_role or "user"
         role_id = await _get_role_id(db, role_slug)

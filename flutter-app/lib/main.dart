@@ -119,27 +119,36 @@ void main() async {
   debugPrint('Backend API base URL: ${ApiConfig.baseUrl}');
   debugPrint('AI service base URL: ${ApiConfig.aiServiceUrl}');
 
-  // Initialize Firebase
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-    debugPrint('Firebase initialized successfully');
+  // Firebase stays disabled until this deployment has complete, independently
+  // owned app configuration. This prevents local builds from silently using
+  // credentials that belong to the upstream project.
+  final firebaseEnabled =
+      dotenv.maybeGet('FIREBASE_ENABLED')?.trim().toLowerCase() == 'true' &&
+      DefaultFirebaseOptions.isConfigured;
+  if (firebaseEnabled) {
+    try {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+      debugPrint('Firebase initialized successfully');
 
-    // Crashlytics: route Flutter framework errors to Crashlytics in release
-    if (!kIsWeb) {
-      FlutterError.onError = kReleaseMode
-          ? FirebaseCrashlytics.instance.recordFlutterFatalError
-          : FlutterError.presentError;
-      // Also catch async errors thrown outside the Flutter widget tree
+      // Crashlytics: route Flutter framework errors to Crashlytics in release
+      if (!kIsWeb) {
+        FlutterError.onError = kReleaseMode
+            ? FirebaseCrashlytics.instance.recordFlutterFatalError
+            : FlutterError.presentError;
+        // Also catch async errors thrown outside the Flutter widget tree
+      }
+
+      // Initialize Firebase Cloud Messaging
+      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+      // Push notification permission should not block app startup
+      // so we delay it until after runApp()
+    } catch (e) {
+      debugPrint('Warning: Firebase initialization failed: $e');
     }
-
-    // Initialize Firebase Cloud Messaging
-    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-    // Push notification permission should not block app startup
-    // so we delay it until after runApp()
-  } catch (e) {
-    debugPrint('Warning: Firebase initialization failed: $e');
+  } else {
+    debugPrint('Firebase disabled: owned app configuration is incomplete');
   }
 
   // Initialize Dependency Injection (skip database on web)
@@ -176,7 +185,7 @@ void main() async {
 
   // Wrap runApp in runZonedGuarded so uncaught async errors are forwarded to
   // Crashlytics. In release mode only — dev keeps the default red-screen behavior.
-  if (!kIsWeb && kReleaseMode) {
+  if (!kIsWeb && kReleaseMode && firebaseEnabled) {
     runZonedGuarded(
       () => runApp(
         EasyLocalization(
@@ -222,11 +231,13 @@ void main() async {
 
   // Initialize Firebase Messaging and Deep Links after UI starts rendering
   WidgetsBinding.instance.addPostFrameCallback((_) async {
-    try {
-      await FirebaseMessagingService.instance.initialize();
-      debugPrint('Firebase Messaging initialized successfully');
-    } catch (e) {
-      debugPrint('Warning: Firebase Messaging initialization failed: $e');
+    if (firebaseEnabled) {
+      try {
+        await FirebaseMessagingService.instance.initialize();
+        debugPrint('Firebase Messaging initialized successfully');
+      } catch (e) {
+        debugPrint('Warning: Firebase Messaging initialization failed: $e');
+      }
     }
     try {
       await DeepLinkService.instance.init();

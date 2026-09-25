@@ -7,11 +7,16 @@ calls live here. Import or initialization failures are handled by the registry.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 from api.services.stt.schemas import AudioSegment, PrimaryResult
+from api.services.stt.moonshine_assets import (
+    MOONSHINE_PACKAGE_VERSION,
+    verify_tiny_streaming_assets,
+)
 
 
 class MoonshineSession:
@@ -66,30 +71,43 @@ class MoonshineSession:
 
 
 class MoonshinePrimary:
-    def __init__(self, model_name: str = "en"):
+    def __init__(
+        self,
+        model_name: str = "tiny_streaming",
+        model_dir: str = "models/moonshine/tiny-streaming-en/quantized_26_07_30",
+    ):
         self.model_name = model_name
+        self.model_dir = Path(model_dir)
         self._factory = None
 
     async def load(self) -> None:
         if self._factory is not None:
             return
+        if self.model_name != "tiny_streaming":
+            raise ValueError(
+                "Only the reviewed Moonshine tiny_streaming model is supported locally"
+            )
+
+        # Never call moonshine_voice.get_model_for_language here.  That helper
+        # downloads assets when the cache is cold, which makes startup and
+        # runtime behavior non-deterministic.
+        verify_tiny_streaming_assets(self.model_dir)
+        from importlib.metadata import version
+
+        installed_version = version("moonshine-voice")
+        if installed_version != MOONSHINE_PACKAGE_VERSION:
+            raise RuntimeError(
+                "Moonshine package version mismatch: "
+                f"expected {MOONSHINE_PACKAGE_VERSION}, got {installed_version}"
+            )
 
         def _load():
-            from moonshine_voice import ModelArch, Transcriber, get_model_for_language
-
-            architectures = {
-                "tiny": ModelArch.TINY,
-                "base": ModelArch.BASE,
-                "tiny_streaming": ModelArch.TINY_STREAMING,
-                "base_streaming": ModelArch.BASE_STREAMING,
-            }
-            model_arch = architectures.get(self.model_name, ModelArch.TINY_STREAMING)
-            model_path, model_arch = get_model_for_language("en", model_arch)
+            from moonshine_voice import ModelArch, Transcriber
 
             def factory():
                 transcriber = Transcriber(
-                    model_path=model_path,
-                    model_arch=model_arch,
+                    model_path=self.model_dir,
+                    model_arch=ModelArch.TINY_STREAMING,
                     update_interval=0.3,
                 )
                 transcriber.start()

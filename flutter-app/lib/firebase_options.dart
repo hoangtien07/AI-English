@@ -11,72 +11,45 @@
 //
 // OR run: flutterfire configure
 
-import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
-import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, kIsWeb, TargetPlatform;
+import 'package:firebase_core/firebase_core.dart'
+    show Firebase, FirebaseOptions;
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class DefaultFirebaseOptions {
+  /// Firebase client identifiers are public configuration, not server secrets.
+  /// This project intentionally supports Firebase on Web only.
+  static bool get isWebConfigured =>
+      _isConfiguredValue(web.apiKey) &&
+      _isConfiguredValue(web.appId) &&
+      _isConfiguredValue(web.messagingSenderId) &&
+      _isConfiguredValue(web.projectId) &&
+      _isConfiguredValue(web.authDomain);
+
+  /// True only when the running platform is Web and its public config is whole.
+  static bool get isConfigured => kIsWeb && isWebConfigured;
+
+  /// True only after the configured Firebase app has initialized successfully.
+  static bool get isReady => isConfigured && Firebase.apps.isNotEmpty;
+
+  static bool _isConfiguredValue(String? value) =>
+      value != null && value.trim().isNotEmpty && !value.startsWith('YOUR_');
+
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
       return web;
     }
-    switch (defaultTargetPlatform) {
-      case TargetPlatform.android:
-        return android;
-      case TargetPlatform.iOS:
-        return ios;
-      case TargetPlatform.macOS:
-        return macos;
-      case TargetPlatform.windows:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for windows - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
-      case TargetPlatform.linux:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for linux - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
-      default:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions are not supported for this platform.',
-        );
-    }
+    throw UnsupportedError(
+      'Firebase is configured for Web only. Do not enable it on this platform.',
+    );
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyDxb89kPDmWalE3fx8Jlo45pNYMfpe-Q5I',
-    appId: '1:432329288238:web:f34e2fdf685d5b8a718dbf',
-    messagingSenderId: '432329288238',
-    projectId: 'lexilingo-88492',
-    authDomain: 'lexilingo-88492.firebaseapp.com',
-    storageBucket: 'lexilingo-88492.firebasestorage.app',
-    measurementId: 'G-M8B2FXYJ42',
-  );
-
-  static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyA88sCxpBNL-__EPTzL5EfotfV7isaZZ_A',
-    appId: '1:432329288238:android:27021651b0302784718dbf',
-    messagingSenderId: '432329288238',
-    projectId: 'lexilingo-88492',
-    storageBucket: 'lexilingo-88492.firebasestorage.app',
-  );
-
-  static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyDnGOEn-S0gI75ZsznWAE8KZslFbXZVhx4',
-    appId: '1:432329288238:ios:982737f02386c9ac718dbf',
-    messagingSenderId: '432329288238',
-    projectId: 'lexilingo-88492',
-    storageBucket: 'lexilingo-88492.firebasestorage.app',
-    iosBundleId: 'com.lexilingo.lexilingoApp',
-  );
-
-  static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyDnGOEn-S0gI75ZsznWAE8KZslFbXZVhx4',
-    appId: '1:432329288238:ios:982737f02386c9ac718dbf',
-    messagingSenderId: '432329288238',
-    projectId: 'lexilingo-88492',
-    storageBucket: 'lexilingo-88492.firebasestorage.app',
-    iosBundleId: 'com.lexilingo.lexilingoApp',
+    apiKey: 'YOUR_WEB_API_KEY',
+    appId: 'YOUR_WEB_APP_ID',
+    messagingSenderId: '403021618812',
+    projectId: 'english-5d522',
+    authDomain: 'english-5d522.firebaseapp.com',
+    storageBucket: 'english-5d522.firebasestorage.app',
+    measurementId: 'YOUR_MEASUREMENT_ID',
   );
 }

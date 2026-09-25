@@ -34,7 +34,11 @@ from api.services.stt.audio_ingest import (
     classify_sequence,
     parse_audio_frame,
 )
-from api.services.stt.errors import STTErrorCode, STTProtocolError
+from api.services.stt.errors import (
+    STTErrorCode,
+    STTPrimaryNotReadyError,
+    STTProtocolError,
+)
 from api.services.stt.runtime import get_stt_config, get_stt_sessions
 from api.services.stt.schemas import ResumeMessage, StartMessage
 from api.services.stt_service import get_stt_service
@@ -190,7 +194,17 @@ async def stream_audio(websocket: WebSocket):
                     STTErrorCode.SERVER_BUSY,
                     "STT quota unavailable or exceeded",
                 ) from exc
-            session = await manager.create(message)
+            try:
+                session = await manager.create(message)
+            except STTPrimaryNotReadyError as exc:
+                # A disabled or unavailable local STT model is an expected
+                # deployment state, not a WebSocket server fault.  Preserve
+                # the stable protocol contract so clients can surface the
+                # actionable recovery state instead of retrying a 1011.
+                raise STTProtocolError(
+                    STTErrorCode.PRIMARY_STT_FAILED,
+                    "STT primary model is not ready",
+                ) from exc
             await send_json(
                 {
                     "type": "session_started",

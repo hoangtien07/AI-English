@@ -1,6 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:lexilingo_app/firebase_options.dart';
 
 import '../utils/app_logger.dart';
 
@@ -44,6 +46,15 @@ class FacebookSignInService {
 
   /// Web: use Firebase Auth signInWithPopup
   Future<String?> _signInWeb() async {
+    final firebaseEnabled =
+        dotenv.maybeGet('FIREBASE_ENABLED')?.trim().toLowerCase() == 'true' &&
+        DefaultFirebaseOptions.isReady;
+    if (!firebaseEnabled) {
+      throw StateError(
+        'Facebook Sign-In is disabled until owned Firebase web configuration is complete.',
+      );
+    }
+
     final provider = FacebookAuthProvider()
       ..addScope('email')
       ..addScope('public_profile');

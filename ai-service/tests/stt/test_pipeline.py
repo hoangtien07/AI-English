@@ -12,7 +12,12 @@ from tests.stt.fakes import FakePrimary, FakeVerifier
 
 @pytest.mark.asyncio
 async def test_registry_enters_degraded_mode(tmp_path):
-    config = STTConfig(temp_dir=str(tmp_path), fallback_primary_engine="none")
+    config = STTConfig(
+        temp_dir=str(tmp_path),
+        enabled=True,
+        fallback_primary_engine="none",
+        degraded_whisper_primary=True,
+    )
     verifier = FakeVerifier()
     registry = STTModelRegistry(
         config, primary=FakePrimary(fail_load=True), verifier=verifier
@@ -20,6 +25,30 @@ async def test_registry_enters_degraded_mode(tmp_path):
     await registry.start()
     assert registry.status == "degraded"
     assert verifier.loads == 1
+
+
+@pytest.mark.asyncio
+async def test_registry_stays_unavailable_without_opt_in_degraded_download(tmp_path):
+    config = STTConfig(
+        temp_dir=str(tmp_path), enabled=True, fallback_primary_engine="none"
+    )
+    verifier = FakeVerifier()
+    registry = STTModelRegistry(
+        config, primary=FakePrimary(fail_load=True), verifier=verifier
+    )
+    await registry.start()
+    assert registry.status == "unavailable"
+    assert verifier.loads == 0
+
+
+@pytest.mark.asyncio
+async def test_disabled_registry_does_not_probe_any_model(tmp_path):
+    primary = FakePrimary()
+    config = STTConfig(temp_dir=str(tmp_path), enabled=False)
+    registry = STTModelRegistry(config, primary=primary, verifier=FakeVerifier())
+    await registry.start()
+    assert registry.status == "disabled"
+    assert primary.loads == 0
 
 
 def test_router_verifies_low_confidence(tmp_path):

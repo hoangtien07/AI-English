@@ -7,6 +7,9 @@ from api.services.stt.schemas import StartMessage
 
 def test_default_config_is_realtime_safe(tmp_path):
     config = STTConfig(temp_dir=str(tmp_path)).validate()
+    assert config.enabled is False
+    assert config.degraded_whisper_primary is False
+    assert config.moonshine_model_dir.endswith("tiny-streaming-en/quantized_26_07_30")
     assert config.verify_model == "base.en"
     assert config.hard_cap_segment_ms == 15000
     assert config.audio_queue_max_frames == 200

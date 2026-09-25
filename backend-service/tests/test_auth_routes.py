@@ -105,7 +105,7 @@ def _make_mock_session(
     async def fake_execute(query):
         return mock_result
 
-    async def fake_refresh(obj):
+    async def fake_refresh(obj, *_args):
         if not getattr(obj, "id", None):
             obj.id = uuid.UUID("550e8400-e29b-41d4-a716-446655440002")
         if not getattr(obj, "created_at", None):
@@ -238,6 +238,26 @@ class TestRegister:
         data = response.json()
         assert data["email"] == "another@example.com"
         assert data["username"] == "anotheruser"
+
+    async def test_register_queues_verification_email_with_a_verify_token(self, client):
+        send_verification_email = AsyncMock(return_value=True)
+        with patch(
+            "app.routes.auth.EmailService.send_verification_email",
+            new=send_verification_email,
+        ):
+            response = await client.post(
+                f"{BASE}/register",
+                json={
+                    "email": "mailflow@example.com",
+                    "username": "mailflow",
+                    "password": "SecurePass123!",
+                },
+            )
+
+        assert response.status_code == 201
+        send_verification_email.assert_awaited_once()
+        assert send_verification_email.await_args.kwargs["to_email"] == "mailflow@example.com"
+        assert send_verification_email.await_args.kwargs["token"]
 
     async def test_register_duplicate_email_returns_400(self):
         """Registration with an already-used email returns 400."""
@@ -680,6 +700,36 @@ class TestForgotPassword:
 
         assert response.status_code == 200
 
+    async def test_forgot_password_sends_reset_email_for_local_account(self):
+        from app.main import app
+        from app.core.database import get_db
+
+        existing_user = _make_mock_user(provider=["local"])
+        session = _make_mock_session(scalar_one_or_none_value=existing_user)
+
+        async def mock_get_db():
+            yield session
+
+        app.dependency_overrides[get_db] = mock_get_db
+        transport = ASGITransport(app=app)
+        send_reset_email = AsyncMock(return_value=True)
+        with patch("app.core.security.create_verification_token", return_value="reset-token"), patch(
+            "app.routes.auth.EmailService.send_password_reset_email", new=send_reset_email
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as c:
+                response = await c.post(
+                    f"{BASE}/forgot-password",
+                    json={"email": existing_user.email},
+                )
+        app.dependency_overrides.clear()
+
+        assert response.status_code == 200
+        send_reset_email.assert_awaited_once_with(
+            to_email=existing_user.email,
+            reset_token="reset-token",
+            display_name=existing_user.display_name,
+        )
+
     async def test_forgot_password_invalid_email_returns_422(self, client):
         """Non-email value triggers 422 validation error."""
         response = await client.post(
@@ -950,6 +1000,71 @@ class TestGoogleLogin:
         app.dependency_overrides.clear()
 
         assert response.status_code == 403
+
+    async def test_google_admin_login_allowlisted_verified_super_admin_returns_200(self):
+        from app.main import app
+        from app.core.database import get_db
+
+        admin_user = _make_mock_user(provider=["google"])
+        admin_user.email = "owner@example.com"
+        admin_user.role = MagicMock(slug="super_admin")
+        admin_user.role_slug = "super_admin"
+        admin_user.role_level = 2
+        session = _make_mock_session(scalar_one_or_none_value=admin_user)
+
+        async def mock_get_db():
+            yield session
+
+        app.dependency_overrides[get_db] = mock_get_db
+        transport = ASGITransport(app=app)
+        with patch(
+            "app.core.security.verify_google_token",
+            new=AsyncMock(
+                return_value={
+                    "email": "OWNER@example.com",
+                    "email_verified": True,
+                    "name": "Owner",
+                }
+            ),
+        ), patch("app.routes.auth.settings.GOOGLE_ADMIN_CLIENT_ID", "admin-client-id"), patch(
+            "app.core.config.Settings.get_admin_role_for_email", return_value="super_admin"
+        ), patch("app.routes.auth._get_role_id", new=AsyncMock(return_value=uuid.uuid4())):
+            async with AsyncClient(transport=transport, base_url="http://test") as c:
+                response = await c.post(
+                    f"{BASE}/google",
+                    json={"id_token": "good-token", "source": "admin"},
+                )
+        app.dependency_overrides.clear()
+
+        assert response.status_code == 200
+        assert response.json()["role"] == "super_admin"
+
+    async def test_google_admin_login_rejects_unverified_google_email(self, client):
+        with patch(
+            "app.core.security.verify_google_token",
+            new=AsyncMock(return_value={"email": "owner@example.com", "email_verified": False}),
+        ), patch("app.routes.auth.settings.GOOGLE_ADMIN_CLIENT_ID", "admin-client-id"), patch(
+            "app.core.config.Settings.get_admin_role_for_email", return_value="super_admin"
+        ):
+            response = await client.post(
+                f"{BASE}/google",
+                json={"id_token": "good-token", "source": "admin"},
+            )
+
+        assert response.status_code == 403
+
+    async def test_google_admin_login_does_not_fallback_to_firebase_token(self, client):
+        firebase_verify = MagicMock()
+        with patch("app.core.security.verify_google_token", new=AsyncMock(return_value=None)), patch(
+            "app.routes.auth.settings.GOOGLE_ADMIN_CLIENT_ID", "admin-client-id"
+        ), patch("app.core.firebase_auth.verify_firebase_token", firebase_verify):
+            response = await client.post(
+                f"{BASE}/google",
+                json={"id_token": "firebase-token", "source": "admin"},
+            )
+
+        assert response.status_code == 401
+        firebase_verify.assert_not_called()
 
 
 # ===========================================================================
@@ -1396,8 +1511,9 @@ class TestAdminOtpSecurityControls:
         app.dependency_overrides[get_db] = mock_get_db
         transport = ASGITransport(app=app)
 
+        send_verification_email = AsyncMock(return_value=True)
         with patch("app.core.security.create_verification_token", return_value="fake-token"), \
-             patch("app.services.email_service.EmailService.send_verification_email", new=AsyncMock()):
+             patch("app.services.email_service.EmailService.send_verification_email", new=send_verification_email):
             async with AsyncClient(transport=transport, base_url="http://test") as c:
                 response = await c.post(
                     f"{BASE}/resend-verification",
@@ -1406,6 +1522,11 @@ class TestAdminOtpSecurityControls:
         app.dependency_overrides.clear()
 
         assert response.status_code == 200
+        send_verification_email.assert_awaited_once_with(
+            to_email=unverified_user.email,
+            token="fake-token",
+            display_name=unverified_user.display_name,
+        )
 
     async def test_resend_verification_already_verified_user_returns_200(self):
         """Already-verified users get the same generic response (no email sent)."""

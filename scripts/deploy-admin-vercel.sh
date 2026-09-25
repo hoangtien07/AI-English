@@ -8,6 +8,11 @@
 set -e
 set -o pipefail
 
+if [[ "${ENABLE_HOSTED_DEPLOYMENTS:-}" != "1" ]]; then
+    echo "Hosted deployment is disabled. Set ENABLE_HOSTED_DEPLOYMENTS=1 only after owner approval."
+    exit 1
+fi
+
 # Add npm global bin to PATH so pnpm/vercel are found regardless of shell config
 _NPM_GLOBAL_BIN="$(npm prefix -g 2>/dev/null)/bin"
 [[ -d "$_NPM_GLOBAL_BIN" && ":$PATH:" != *":$_NPM_GLOBAL_BIN:"* ]] && export PATH="$_NPM_GLOBAL_BIN:$PATH"
@@ -141,26 +146,9 @@ echo ""
 
 # Check if .env.production exists
 if [ ! -f "$ENV_FILE" ]; then
-    echo -e "${YELLOW}⚠${NC} .env.production not found. Creating..."
-    cat > "$ENV_FILE" << 'EOF'
-VITE_ENV=production
-VITE_USE_GATEWAY=false
-VITE_API_KEY=
-VITE_AI_ADMIN_URL=https://api.lexilingo.me/api/v1/ai-admin
-VITE_AI_ADMIN_API_KEY=
-VITE_BACKEND_URL=https://api.lexilingo.me/api/v1
-VITE_BACKEND_URL_FALLBACK=
-VITE_AI_URL=https://api.lexilingo.me/api/v1
-VITE_AI_URL_FALLBACK=
-VITE_GOOGLE_CLIENT_ID=REPLACE_WITH_GOOGLE_CLIENT_ID
-VITE_APP_NAME=LexiLingo Admin Dashboard
-VITE_APP_VERSION=0.5.0
-VITE_ADMIN_EMAILS=
-VITE_SUPER_ADMIN_EMAILS=
-EOF
-    echo -e "${YELLOW}⚠${NC} Please update URLs in .env.production"
-    echo ""
-    read -p "Press Enter to continue..."
+    echo -e "${RED}Missing ignored deployment input: $ENV_FILE${NC}"
+    echo "Set explicit owned VITE_BACKEND_URL and VITE_AI_URL values, then run again."
+    exit 1
 fi
 
 echo -e "${GREEN}✓${NC} Environment configuration ready"

@@ -1,10 +1,11 @@
 ENVIRONMENT=production
-API_BASE_URL=https://api.lexilingo.me/api/v1
+API_BASE_URL=
 API_BASE_URL_FALLBACK=
-AI_SERVICE_URL=https://api.lexilingo.me/api/v1
+AI_SERVICE_URL=
 AI_SERVICE_URL_FALLBACK=
+FIREBASE_ENABLED=false
 ENABLE_VOICE_FEATURE=true
 ENABLE_GAMIFICATION=true
 ENABLE_STARTER_REWARD=false
 DEBUG_MODE=false
-GOOGLE_SERVER_CLIENT_ID=432329288238-co06he7ecljb7ubupm5mj84t3i0r1u7j.apps.googleusercontent.com
+GOOGLE_SERVER_CLIENT_ID=403021618812-7jd4j9l70jeakjlt6jpv86dogmqut6lo.apps.googleusercontent.com

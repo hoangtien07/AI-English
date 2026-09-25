@@ -1,0 +1,211 @@
+{
+  "schema_version": 1,
+  "title": "Local data provenance catalog",
+  "as_of": "2026-09-07",
+  "scope": "Repository-local inventory only. It deliberately makes no network request and does not assert rights not evidenced by a tracked file.",
+  "policy": {
+    "external_acquisition": "blocked_pending_written_rights_decision",
+    "original_user_or_production_data": "prohibited",
+    "allowed_local_inputs": [
+      "repository-licensed software and clearly identified local seed metadata",
+      "clearly synthetic test or demo personas",
+      "test fixtures, only in tests",
+      "content with a source-specific rights record that has been independently approved"
+    ],
+    "catalog_statuses": [
+      "repository_license_only",
+      "synthetic",
+      "fixture_only",
+      "unverified",
+      "blocked_external"
+    ],
+    "usage_dispositions": [
+      "minimal_local_seed_candidate",
+      "test_only",
+      "hold_pending_rights",
+      "disabled_pending_rights",
+      "not_content_license"
+    ]
+  },
+  "sources": [
+    {
+      "id": "source-repository-mit",
+      "kind": "repository_license",
+      "path": "LICENSE",
+      "license_id": "MIT",
+      "status": "repository_license_only",
+      "evidence": "LICENSE names the software and associated documentation; it does not identify provenance for every embedded learning-data artifact."
+    },
+    {
+      "id": "source-repository-authored-seed",
+      "kind": "repository_seed_metadata",
+      "path": "backend-service/app/core/shop_catalog.py",
+      "license_id": "MIT",
+      "status": "repository_license_only",
+      "evidence": "LOCAL_BOOTSTRAP.md selects this built-in catalog as the minimal local seed and seed_shop_items.py upserts it by name."
+    },
+    {
+      "id": "source-synthetic-demo-personas",
+      "kind": "synthetic_personas",
+      "path": "backend-service/scripts/seed_demo_data.py",
+      "license_id": null,
+      "status": "synthetic",
+      "evidence": "The script creates demo_...@lexilingo.dev accounts and deletes only that namespace before recreating random demo activity."
+    },
+    {
+      "id": "source-test-fixture-declarations",
+      "kind": "test_fixture_declarations",
+      "path": "ai-service/tests/content_etl/fixtures",
+      "license_id": null,
+      "status": "fixture_only",
+      "evidence": "Fixtures and their tests exercise declared upstream metadata; their presence is not an approval to ship the represented source data."
+    },
+    {
+      "id": "source-unattributed-repository-content",
+      "kind": "repository_content_without_per_artifact_rights_record",
+      "path": "ai-service/data",
+      "license_id": null,
+      "status": "unverified",
+      "evidence": "DATA_AUDIT.md identifies generated/curated artifacts and recommends recording source ID, license, split, and transformation on every imported record."
+    },
+    {
+      "id": "source-external-rss-feeds",
+      "kind": "external_collection",
+      "path": "backend-service/scripts/seed_empty_tables_and_crawl.py",
+      "license_id": null,
+      "status": "blocked_external",
+      "evidence": "The script declares BBC, NASA, NYT, and Guardian RSS URLs. The independent-development plan blocks external acquisition until a written rights decision."
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "artifact-repository-license",
+      "paths": ["LICENSE"],
+      "source_refs": ["source-repository-mit"],
+      "status": "repository_license_only",
+      "usage_disposition": "not_content_license",
+      "evidence": "MIT license is retained for software and documentation; do not infer learning-content rights from it."
+    },
+    {
+      "id": "artifact-minimal-shop-catalog",
+      "paths": ["backend-service/app/core/shop_catalog.py", "backend-service/scripts/seed_shop_items.py"],
+      "source_refs": ["source-repository-authored-seed"],
+      "status": "repository_license_only",
+      "usage_disposition": "minimal_local_seed_candidate",
+      "seed_entrypoint_refs": ["seed-backend-bootstrap", "seed-shop-catalog"],
+      "evidence": "The documented local minimal seed is an upsert by item name. No completed local seed-run log was found in the repository."
+    },
+    {
+      "id": "artifact-synthetic-demo-personas",
+      "paths": ["backend-service/scripts/seed_demo_data.py", "backend-service/scripts/seed_analytics.py"],
+      "source_refs": ["source-synthetic-demo-personas"],
+      "status": "synthetic",
+      "usage_disposition": "minimal_local_seed_candidate",
+      "seed_entrypoint_refs": ["seed-demo-personas", "seed-analytics-personas"],
+      "evidence": "Use only in an isolated local database: both scripts deliberately delete their own demo/test email namespaces before reseeding. They are not production-user data."
+    },
+    {
+      "id": "artifact-ai-story-blueprints",
+      "paths": ["ai-service/data/sample_stories.json", "ai-service/scripts/seed_stories.py"],
+      "source_refs": ["source-unattributed-repository-content"],
+      "status": "unverified",
+      "usage_disposition": "hold_pending_rights",
+      "seed_entrypoint_refs": ["seed-ai-stories"],
+      "evidence": "DATA_AUDIT.md calls the 68 records role-play blueprints, not complete graded readers. seed_stories.py upserts by story_id, but the data lacks a source-specific rights manifest."
+    },
+    {
+      "id": "artifact-ai-knowledge-graph",
+      "paths": ["ai-service/data/kg/*.json", "ai-service/data/topic_graphs.json", "ai-service/data/topic_graphs.enriched.json", "ai-service/data/knowledge_extended.json"],
+      "source_refs": ["source-unattributed-repository-content"],
+      "status": "unverified",
+      "usage_disposition": "hold_pending_rights",
+      "seed_entrypoint_refs": ["seed-runtime-kg"],
+      "evidence": "DATA_AUDIT.md records duplicate, schema, coverage, and cross-file-reference risks. The existing crawl report also names external URLs, so this catalog does not treat the graph as cleared for distribution."
+    },
+    {
+      "id": "artifact-word-catalog",
+      "paths": ["scripts/categorized_words_final.json"],
+      "source_refs": ["source-unattributed-repository-content"],
+      "status": "unverified",
+      "usage_disposition": "hold_pending_rights",
+      "evidence": "A large vocabulary JSON is tracked but the inventory found no source-specific license or attribution file beside it."
+    },
+    {
+      "id": "artifact-slang-notes",
+      "paths": ["ai-service/data/external_docs/modern_slang.md"],
+      "source_refs": ["source-unattributed-repository-content"],
+      "status": "unverified",
+      "usage_disposition": "hold_pending_rights",
+      "evidence": "The file contains editorial learning text but no author, source URL, license, or retrieval record."
+    },
+    {
+      "id": "artifact-licensed-etl-contract-fixture",
+      "paths": ["contracts/content-agent/fixtures/licensed-etl-artifact-v2.json"],
+      "source_refs": ["source-test-fixture-declarations"],
+      "status": "fixture_only",
+      "usage_disposition": "test_only",
+      "evidence": "The contract fixture uses placeholder hashes and synthetic word00-style records while exercising complete provenance fields."
+    },
+    {
+      "id": "artifact-content-etl-mini-fixtures",
+      "paths": ["ai-service/tests/content_etl/fixtures/*"],
+      "source_refs": ["source-test-fixture-declarations"],
+      "status": "fixture_only",
+      "usage_disposition": "test_only",
+      "evidence": "OEWN, Tatoeba, Common Voice, LibriSpeech, CMUdict, CEFR-J, and Wikidata names appear as narrow test fixtures; acquire and approve real snapshots separately before runtime use."
+    },
+    {
+      "id": "artifact-external-rss-crawl-pipeline",
+      "paths": ["backend-service/scripts/seed_empty_tables_and_crawl.py"],
+      "source_refs": ["source-external-rss-feeds"],
+      "status": "blocked_external",
+      "usage_disposition": "disabled_pending_rights",
+      "seed_entrypoint_refs": ["seed-external-rss-crawl"],
+      "evidence": "This entrypoint fetches external RSS sources. It must remain unused under the current local-only/no-external-collection directive."
+    }
+  ],
+  "seed_entrypoints": [
+    {
+      "id": "seed-backend-bootstrap",
+      "path": "backend-service/scripts/bootstrap_local.py",
+      "idempotency": "schema bootstrap only; fresh or Alembic-versioned databases upgrade, populated unversioned databases are refused",
+      "input_artifact_refs": []
+    },
+    {
+      "id": "seed-shop-catalog",
+      "path": "backend-service/scripts/seed_shop_items.py",
+      "idempotency": "upsert by item name",
+      "input_artifact_refs": ["artifact-minimal-shop-catalog"]
+    },
+    {
+      "id": "seed-demo-personas",
+      "path": "backend-service/scripts/seed_demo_data.py",
+      "idempotency": "deletes only demo_%@lexilingo.dev then recreates synthetic activity",
+      "input_artifact_refs": ["artifact-synthetic-demo-personas"]
+    },
+    {
+      "id": "seed-analytics-personas",
+      "path": "backend-service/scripts/seed_analytics.py",
+      "idempotency": "deletes test-email namespaces then recreates deterministic-seeded analytics data",
+      "input_artifact_refs": ["artifact-synthetic-demo-personas"]
+    },
+    {
+      "id": "seed-ai-stories",
+      "path": "ai-service/scripts/seed_stories.py",
+      "idempotency": "MongoDB update_one(..., upsert=True) keyed by story_id",
+      "input_artifact_refs": ["artifact-ai-story-blueprints"]
+    },
+    {
+      "id": "seed-runtime-kg",
+      "path": "ai-service/scripts/rebuild_runtime_kg.py",
+      "idempotency": "rebuilds a validated replacement graph and atomically promotes it; not a content-rights approval",
+      "input_artifact_refs": ["artifact-ai-knowledge-graph"]
+    },
+    {
+      "id": "seed-external-rss-crawl",
+      "path": "backend-service/scripts/seed_empty_tables_and_crawl.py",
+      "idempotency": "partially guards empty tables but retrieves remote RSS content",
+      "input_artifact_refs": ["artifact-external-rss-crawl-pipeline"]
+    }
+  ]
+}

@@ -138,6 +138,43 @@ The system is organized into 8 architectural layers:
 
 ## 5. Getting Started
 
+### Local development on Windows / PowerShell
+
+The local-only Compose interface is `scripts/dev-local.ps1`. It keeps service
+ports bound to loopback and validates only the presence of required keys in
+the ignored `.env` and `backend-service/.env` files; it never prints values.
+Install Docker Desktop/Compose, Python 3.11+, Node/npm, and Flutter, then copy
+the supplied environment templates and enter values owned for this project.
+
+```powershell
+# PostgreSQL, Redis, and the backend API.
+.\scripts\dev-local.ps1 up-core
+
+# Core plus MongoDB, dedicated AI Redis, and the AI service.
+.\scripts\dev-local.ps1 up-full
+
+.\scripts\dev-local.ps1 status
+.\scripts\dev-local.ps1 test
+.\scripts\dev-local.ps1 stop
+```
+
+`up-core` waits for Compose health and `http://127.0.0.1:8000/health`.
+`up-full` also waits for `http://127.0.0.1:8001/health` and needs an owned
+`GEMINI_API_KEY` in the ignored root `.env`. `test` starts only PostgreSQL and
+Redis for the isolated backend test-database runner, then runs focused AI,
+admin, and Flutter checks; it never resets Compose data.
+
+`reset-data` is intentionally separate. It stops only the named local Compose
+project, lists the exact Compose-labelled data volumes it will delete, refuses
+ambiguous volume scopes or test contexts, and requires this full confirmation:
+
+```powershell
+.\scripts\dev-local.ps1 reset-data -ConfirmResetData 'DELETE-LOCAL-DATA'
+```
+
+Optional management tools are in Compose profile `tools` (pgAdmin, Mongo
+Express, RedisInsight); reminder processes are in profile `workers`.
+
 ### Prerequisites
 
 | Tool | Version |
@@ -160,8 +197,11 @@ cp .env.example .env # root-level env for compose
 cp backend-service/.env.example backend-service/.env
 cp ai-service/.env.example ai-service/.env
 
-# Start all services (postgres, redis, mongodb, backend, ai-service)
-docker-compose up -d
+# Windows / PowerShell: start the health-checked core stack
+.\scripts\dev-local.ps1 up-core
+
+# Include the local AI profile when its owned local key is configured
+.\scripts\dev-local.ps1 up-full
 ```
 
 ### Option B — All services locally (no Docker)

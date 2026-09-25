@@ -103,6 +103,8 @@ docs/cmd
 **/models/whisper/*.pt
 **/models/hubert/*.pt
 **/models/piper/*.onnx
+**/models/piper/*.onnx.json
+**/models/moonshine/
 **/models/embeddings/*.bin
 
 # Database backups and temporary files

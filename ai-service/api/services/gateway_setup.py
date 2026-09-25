@@ -206,7 +206,7 @@ async def _register_gemini(gateway: ModelGateway) -> None:
     async def loader():
         config = GeminiConfig(
             api_key=os.getenv("GEMINI_API_KEY"),
-            model=os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
+            model=os.getenv("GEMINI_MODEL", "gemini-3.6-flash"),
         )
         handler = GeminiHandler(config)
         await handler.load()

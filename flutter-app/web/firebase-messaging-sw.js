@@ -1,21 +1,37 @@
 importScripts("https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js");
 importScripts("https://www.gstatic.com/firebasejs/10.7.0/firebase-messaging-compat.js");
 
-firebase.initializeApp({
-  apiKey: "AIzaSyDxb89kPDmWalE3fx8Jlo45pNYMfpe-Q5I",
-  authDomain: "lexilingo-88492.firebaseapp.com",
-  projectId: "lexilingo-88492",
-  storageBucket: "lexilingo-88492.firebasestorage.app",
-  messagingSenderId: "432329288238",
-  appId: "1:432329288238:web:f34e2fdf685d5b8a718dbf",
-});
+const firebaseConfig = {
+  apiKey: "YOUR_WEB_API_KEY",
+  authDomain: "english-5d522.firebaseapp.com",
+  projectId: "english-5d522",
+  storageBucket: "english-5d522.firebasestorage.app",
+  messagingSenderId: "403021618812",
+  appId: "YOUR_WEB_APP_ID",
+};
 
-const messaging = firebase.messaging();
+// Service workers cannot read Flutter's bundled dotenv assets. Keep this
+// separate flag false until the generated Web config and console setup are
+// complete, then change it deliberately alongside FIREBASE_ENABLED=true.
+const firebaseEnabled = false;
 
-messaging.onBackgroundMessage((payload) => {
-  const { title, body, icon } = payload.notification ?? {};
-  self.registration.showNotification(title ?? "LexiLingo", {
-    body: body ?? "",
-    icon: icon ?? "/icons/Icon-192.png",
+// Keep messaging inert until the owned Firebase Web app has supplied its two
+// generated identifiers. The Flutter development config also disables
+// Firebase, so this worker cannot contact the upstream Firebase project.
+if (
+  firebaseEnabled &&
+  !firebaseConfig.apiKey.startsWith("YOUR_") &&
+  !firebaseConfig.appId.startsWith("YOUR_") &&
+  !firebaseConfig.messagingSenderId.startsWith("YOUR_")
+) {
+  firebase.initializeApp(firebaseConfig);
+  const messaging = firebase.messaging();
+
+  messaging.onBackgroundMessage((payload) => {
+    const { title, body, icon } = payload.notification ?? {};
+    self.registration.showNotification(title ?? "LexiLingo", {
+      body: body ?? "",
+      icon: icon ?? "/icons/Icon-192.png",
+    });
   });
-});
+}

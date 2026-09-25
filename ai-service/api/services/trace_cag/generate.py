@@ -43,6 +43,12 @@ SAFE_TUTOR_FALLBACK = (
 )
 
 
+def _gemini_model_name() -> str:
+    """Return the configured REST model name without an optional `models/` prefix."""
+    configured = os.getenv("GEMINI_MODEL", "gemini-3.6-flash").strip()
+    return configured.removeprefix("models/") or "gemini-3.6-flash"
+
+
 class ProviderBusyError(RuntimeError):
     pass
 
@@ -369,9 +375,10 @@ async def stream_llm_tokens(
         if not gemini_key or _provider_is_disabled("gemini"):
             return
 
+        gemini_model = _gemini_model_name()
         url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
-            "gemini-2.0-flash:streamGenerateContent?alt=sse"
+            f"{gemini_model}:streamGenerateContent?alt=sse"
         )
         request_body = {
             "contents": [{"role": "user", "parts": [{"text": user_input}]}],
@@ -437,7 +444,7 @@ async def stream_llm_tokens(
         yield token
     if gemini_yielded and provider_info is not None:
         provider_info["provider"] = "gemini"
-        provider_info["model"] = "gemini-2.0-flash"
+        provider_info["model"] = _gemini_model_name()
 
 
 async def generate_node(state: TraceCAGState) -> Dict[str, Any]:
@@ -625,6 +632,7 @@ async def generate_node(state: TraceCAGState) -> Dict[str, Any]:
             )
             groq_model = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
             gemini_key = os.getenv("GEMINI_API_KEY", "")
+            gemini_model = _gemini_model_name()
 
             # Disable Qwen3 thinking to keep token budget for actual response.
             _groq_messages = _qwen_no_think_messages(groq_model, messages)
@@ -660,7 +668,10 @@ async def generate_node(state: TraceCAGState) -> Dict[str, Any]:
                     return None, None
                 try:
                     gemini_contents = [{"role": "user", "parts": [{"text": user_input}]}]
-                    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+                    url = (
+                        "https://generativelanguage.googleapis.com/v1beta/models/"
+                        f"{gemini_model}:generateContent"
+                    )
                     request_body = {
                         "contents": gemini_contents,
                         "systemInstruction": {"parts": [{"text": system_prompt}]},
@@ -675,7 +686,7 @@ async def generate_node(state: TraceCAGState) -> Dict[str, Any]:
                     if resp is not None and resp.status_code == 200:
                         candidates = resp.json().get("candidates", [])
                         if candidates:
-                            return candidates[0]["content"]["parts"][0]["text"], "gemini-2.0-flash"
+                            return candidates[0]["content"]["parts"][0]["text"], gemini_model
                 except Exception as e:
                     logger.warning(f"[generate_node] Gemini failed: {e}")
                 return None, None

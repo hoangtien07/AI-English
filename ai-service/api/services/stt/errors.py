@@ -3,6 +3,10 @@
 from enum import Enum
 
 
+class STTPrimaryNotReadyError(RuntimeError):
+    """Raised only when no loaded primary STT model can create a session."""
+
+
 class STTErrorCode(str, Enum):
     INVALID_START = "INVALID_START"
     UNSUPPORTED_AUDIO_FORMAT = "UNSUPPORTED_AUDIO_FORMAT"

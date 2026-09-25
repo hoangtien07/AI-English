@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_URL="${1:-https://api.lexilingo.me}"
+if [[ "${ENABLE_HOSTED_DEPLOYMENTS:-}" != "1" ]]; then
+  echo "Hosted smoke tests are disabled. Set ENABLE_HOSTED_DEPLOYMENTS=1 only after owner approval."
+  exit 1
+fi
+
+BASE_URL="${1:-${SMOKE_BASE_URL:?Set SMOKE_BASE_URL to an owned HTTPS endpoint}}"
 BASE_URL="${BASE_URL%/}"
+ADMIN_ORIGIN="${SMOKE_ADMIN_ORIGIN:?Set SMOKE_ADMIN_ORIGIN to the explicit owned admin origin}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -29,7 +35,7 @@ check_status() {
 }
 
 check_cors_preflight() {
-  local origin="https://admin.lexilingo.me"
+  local origin="$ADMIN_ORIGIN"
   local path method headers
   while read -r path method; do
     headers=$(curl -sS --max-time 20 -D - -o /dev/null -X OPTIONS "${BASE_URL}${path}" \
