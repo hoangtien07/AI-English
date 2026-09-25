@@ -1,4 +1,4 @@
-Contact: mailto:nhthang.dev@gmail.com
+Contact: https://github.com/hoangtien07/AI-English/security/advisories/new
 Expires: 2027-12-31T23:59:59.000Z
 Preferred-Languages: en, vi
-Canonical: https://lexilingo.me/.well-known/security.txt
+Canonical: https://hoangtien07.me/.well-known/security.txt

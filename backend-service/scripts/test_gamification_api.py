@@ -17,11 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 async def test_api():
     async_session = AsyncSession(engine)
     async with async_session as db:
-        # Get user nhthang312@gmail.com
-        res = await db.execute(select(User).where(User.email == 'nhthang312@gmail.com'))
+        target_email = os.environ.get("TEST_TARGET_EMAIL", "dev-user@example.com")
+        res = await db.execute(select(User).where(User.email == target_email))
         current_user = res.scalar_one_or_none()
         if not current_user:
-            print("User nhthang312@gmail.com not found!")
+            print(f"User {target_email} not found!")
             return
             
         print(f"User in DB: email={current_user.email}, rank={current_user.rank}, level={current_user.level}, numeric_level={current_user.numeric_level}")

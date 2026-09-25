@@ -14,12 +14,6 @@ class AdminUser {
   final bool isAdmin;
   final bool hasUserAccount;
 
-  // Accounts that also have a learner profile in the user app.
-  static const _userZoneWhitelist = [
-    'nhthang312@gmail.com',
-    'thefirestar312@gmail.com',
-  ];
-
   const AdminUser({
     required this.id,
     required this.email,
@@ -32,8 +26,9 @@ class AdminUser {
     required this.hasUserAccount,
   });
 
-  bool get hasUserZoneAccess =>
-      _userZoneWhitelist.contains(email.toLowerCase());
+  // In this self-hosted deployment every admin account lives in the same
+  // users table as learner accounts, so any admin may open the user zone.
+  bool get hasUserZoneAccess => isAdmin;
 
   factory AdminUser.fromJson(Map<String, dynamic> json) {
     final roleSlug = (json['role_slug'] ?? json['role'] ?? 'admin').toString();

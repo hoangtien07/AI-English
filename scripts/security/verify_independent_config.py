@@ -18,6 +18,9 @@ ROOT = Path(__file__).resolve().parents[2]
 TARGETS = (
     ".github",
     "admin-service",
+    "ai-service",
+    "backend-service",
+    "contracts",
     "deploy",
     "docker-compose.yml",
     "flutter-app",
@@ -56,10 +59,10 @@ LEGACY_RUNTIME_MARKERS = (
     "lexilingo-backend.onrender.com",
 )
 SECRET_PATTERNS = (
-    re.compile(r"AIza[0-9A-Za-z_-]{20,}"),
-    re.compile(r"(?:sk|gsk)_[0-9A-Za-z_-]{16,}"),
-    re.compile(r"(?:ghp|github_pat)_[0-9A-Za-z_-]{16,}"),
-    re.compile(r"AKIA[0-9A-Z]{16}"),
+    re.compile(r"\bAIza[0-9A-Za-z_-]{20,}"),
+    re.compile(r"\b(?:sk|gsk)_[0-9A-Za-z_-]{16,}"),
+    re.compile(r"\b(?:ghp|github_pat)_[0-9A-Za-z_-]{16,}"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}"),
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
 )
 PROVIDER_ASSIGNMENT = re.compile(

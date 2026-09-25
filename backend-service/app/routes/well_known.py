@@ -1,8 +1,8 @@
 """
 Serves /.well-known/ files required for Android App Links and iOS Universal Links.
 
-Android: https://lexilingo.me/.well-known/assetlinks.json
-iOS:     https://lexilingo.me/.well-known/apple-app-site-association
+Android: https://<app-domain>/.well-known/assetlinks.json
+iOS:     https://<app-domain>/.well-known/apple-app-site-association
 """
 
 from fastapi import APIRouter

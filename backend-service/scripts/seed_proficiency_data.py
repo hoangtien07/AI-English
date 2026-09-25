@@ -1,5 +1,5 @@
 """
-Seed Proficiency Data for nhthang312@gmail.com
+Seed Proficiency Data for a local test account
 
 Generates realistic, large-scale proficiency data across all 5 tables:
   - user_proficiency_profiles (1 row)
@@ -19,6 +19,7 @@ Usage:
 """
 
 import asyncio
+import os
 import sys
 import random
 import uuid
@@ -46,7 +47,7 @@ from app.models.proficiency import (
 )
 
 # ── Constants ────────────────────────────────────────────────────────
-TARGET_EMAIL = "nhthang312@gmail.com"
+TARGET_EMAIL = os.environ.get("SEED_TARGET_EMAIL", "dev-user@example.com")
 SEED_TAG = "proficiency_seed_v1"  # stored in attempt_metadata for easy cleanup
 
 SKILLS = list(SkillType)
@@ -136,9 +137,9 @@ async def seed(database_url: str | None = None):
             from app.core.security import get_password_hash
             user = User(
                 email=TARGET_EMAIL,
-                username="nhthang312",
+                username=TARGET_EMAIL.split("@")[0],
                 hashed_password=get_password_hash("SeedUser_testpass123!"),
-                display_name="Nguyen Huu Thang (seed)",
+                display_name="Seed User",
             )
             session.add(user)
             await session.commit()

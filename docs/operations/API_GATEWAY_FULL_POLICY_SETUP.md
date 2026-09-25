@@ -11,7 +11,7 @@ Also included: policy templates for **Cloudflare** and **Azure API Management**.
 ## 1. What was added
 
 - Kong declarative config: `gateway/kong/kong.yml`
-- Kong declarative config (hybrid upstreams): `gateway/kong/kong.hybrid.yml`
+- Kong hybrid template: `gateway/kong/kong.hybrid.yml.template` (render to `kong.hybrid.yml` via `gateway/kong/render-hybrid.sh`)
 - Kong + observability stack: `gateway/docker-compose.kong.yml`
 - Kong + observability stack (hybrid): `gateway/docker-compose.kong.hybrid.yml`
 - Prometheus config: `gateway/observability/prometheus.yml`
@@ -59,20 +59,24 @@ cd gateway
 docker compose -f docker-compose.kong.yml up -d
 ```
 
-## 3.1 Run hybrid profile (Render + Tunnel upstreams)
+## 3.1 Run hybrid profile (self-hosted upstreams)
 
-Use this profile when backend is on Render and AI is exposed through Cloudflare Tunnel.
+Use this profile when the public app and admin are served on owned domains and
+the backend/AI services live on other hosts or containers.
+
+Kong's declarative loader does not expand environment variables, so render the
+config first — the rendered `kong.hybrid.yml` is gitignored and contains the
+real key-auth credentials:
 
 ```bash
 cd gateway
+cp kong/kong-hybrid.env.example kong/kong-hybrid.env   # fill in owned values
+./kong/render-hybrid.sh                                # writes kong/kong.hybrid.yml
 docker compose -f docker-compose.kong.hybrid.yml up -d
 ```
 
-Hybrid upstream source of truth:
-- `docs/gateway/ENDPOINT_AUDIT_2026-03-19.md`
-
-Important:
-- Update `gateway/kong/kong.hybrid.yml` when tunnel URL changes.
+Re-run `render-hybrid.sh` whenever an upstream URL, server name, or API key
+changes, then restart the hybrid compose stack.
 
 Gateway endpoints:
 - Public gateway: `http://localhost:8008`

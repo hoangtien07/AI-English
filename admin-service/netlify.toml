@@ -17,6 +17,12 @@
   status = 200
 
 # Security headers
+# NOTE on connect-src: it only allows 'self' + Google endpoints. That works
+# when the admin SPA is served same-origin as the API (gateway/nginx), but a
+# hosted Netlify deploy calling a cross-origin API will be CSP-blocked. Before
+# deploying here, append the API origin(s) (e.g. https://api.example.com) to
+# the connect-src list below — the Vercel deploy script does this injection
+# automatically for vercel.json.
 [[headers]]
   for = "/*"
   [headers.values]
