@@ -15,11 +15,16 @@ ARG REPO_URL=https://github.com/hoangtien07/AI-English.git
 ARG GIT_REF=tienph
 
 # ── fetch the pinned source ──────────────────────────────────────────────
+# init+fetch (not clone --branch) so GIT_REF accepts a branch, a tag, OR a
+# full commit SHA — clone --branch rejects SHAs.
 FROM alpine:3.20 AS source
 ARG REPO_URL
 ARG GIT_REF
 RUN apk add --no-cache git && \
-    git clone --depth 1 --branch "${GIT_REF}" "${REPO_URL}" /repo
+    git init -q /repo && \
+    git -C /repo remote add origin "${REPO_URL}" && \
+    git -C /repo fetch -q --depth 1 origin "${GIT_REF}" && \
+    git -C /repo checkout -q FETCH_HEAD
 
 # ── builder: venv + pinned wheels + voice models ─────────────────────────
 FROM python:3.11.13-slim-bookworm@sha256:86adf8dbadc3d6e82ee5dd2c74bec2e1c2467cdad47886280501df722372d2e1 AS builder

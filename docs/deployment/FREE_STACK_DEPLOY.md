@@ -127,9 +127,9 @@ empty Neon DB automatically. `/health` must return 200 for the deploy to pass.
    → hardware **CPU basic (free)** → visibility Private is fine.
 2. In the Space's **Files** tab upload `deploy/hf-space/Dockerfile` from this
    repo, renamed to `Dockerfile` (or `git clone` the space repo, copy the file
-   in, push). It clones `tienph` at build time — for reproducible deploys set
-   Space variable `GIT_REF` to a commit SHA instead of the moving branch (a
-   rebuild with a branch ref silently pulls newer code).
+   in, push). It fetches `tienph` at build time — for reproducible deploys set
+   Space variable `GIT_REF` to a **full** commit SHA instead of the moving
+   branch (a rebuild with a branch ref silently pulls newer code).
 3. Space **Settings → Variables and secrets**:
 
 ```
