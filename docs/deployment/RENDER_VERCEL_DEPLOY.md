@@ -15,6 +15,13 @@ ai.<domain>     (Render web service: lexilingo-ai)
 `render.yaml` at the repo root is the Blueprint. Frontends deploy separately to
 Vercel via `scripts/deploy-*.sh` or the CD workflow.
 
+> **No API gateway on Render.** Browsers call `api.`/`ai.` directly, and the
+> Kong gateway is not in this path. ai-service still enforces `X-Admin-Key` on
+> admin routes and JWT on user routes, but Kong's key-auth/rate-limit plugins
+> are absent — Render has no native per-route throttling. If you want that
+> layer, put `ai.<domain>` behind Cloudflare (rate-limit rules) or use the
+> self-hosted VPS + Kong profile instead.
+
 ## 1. Prerequisites
 
 | Thing | Where | Notes |
