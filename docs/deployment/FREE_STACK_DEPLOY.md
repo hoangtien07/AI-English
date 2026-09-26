@@ -59,7 +59,13 @@ openssl rand -hex 32   # run 4 times →
 ## 3. MongoDB Atlas M0
 
 Same as the Render plan: create M0 cluster → database user → Network Access
-`0.0.0.0/0` (HF egress IPs are not fixed) → copy `mongodb+srv://...` URI.
+`0.0.0.0/0` → copy `mongodb+srv://...` URI.
+
+> `0.0.0.0/0` is required only because HF Spaces have no fixed egress IPs and
+> Atlas M0 does not support private endpoints. Mitigate it: use a long random
+> DB password (the URI is the only barrier left), enable Atlas alert on
+> unusual access, and tighten the allowlist if ai-service moves somewhere
+> with static egress later.
 
 ## 4. Koyeb — backend-service
 
@@ -121,8 +127,9 @@ empty Neon DB automatically. `/health` must return 200 for the deploy to pass.
    → hardware **CPU basic (free)** → visibility Private is fine.
 2. In the Space's **Files** tab upload `deploy/hf-space/Dockerfile` from this
    repo, renamed to `Dockerfile` (or `git clone` the space repo, copy the file
-   in, push). It clones `tienph` at build time — set build arg `GIT_REF` to
-   another branch via a Space variable if needed.
+   in, push). It clones `tienph` at build time — for reproducible deploys set
+   Space variable `GIT_REF` to a commit SHA instead of the moving branch (a
+   rebuild with a branch ref silently pulls newer code).
 3. Space **Settings → Variables and secrets**:
 
 ```
@@ -140,11 +147,14 @@ AI_AUDIT_INGEST_SECRET=<shared>
 GROQ_API_KEYS=<comma-separated, up to 7>
 GEMINI_API_KEY=
 HUGGINGFACE_API_KEY=
-STT_MODEL_NAME=small
 STT_DEVICE=cpu
 STT_COMPUTE_TYPE=int8
 VOICE_DUPLEX_ENABLED=false
 ```
+
+No `STT_VERIFY_MODEL`/`TTS_*` needed — the image bundles faster-whisper
+`base.en` weights (`/opt/stt-models/…`) and the Piper voice
+(`/opt/voice-models/…`), and both default envs point at them.
 
 4. After build, the service is at `https://<user>-<space>.hf.space` — check
    `/live` returns 200 (models may still be loading → `/health` later).
@@ -160,9 +170,12 @@ Two projects as in the Render guide. Environment:
 
 | Var | Value |
 |---|---|
-| `VITE_BACKEND_URL` | `https://<app>.koyeb.app` (or `https://api.<domain>`) |
-| `VITE_AI_URL` | `https://<user>-<space>.hf.space` |
+| `VITE_BACKEND_URL` | `https://<app>.koyeb.app/api/v1` (or `https://api.<domain>/api/v1`) |
+| `VITE_AI_URL` | `https://<user>-<space>.hf.space/api/v1` |
 | `VITE_PUBLIC_WEB_URL` | `https://www.<domain>` |
+
+The `/api/v1` suffix is required — `ENV.backendUrl`/`aiUrl` are used verbatim
+(`${ENV.backendUrl}/admin/...`), the frontends append no prefix themselves.
 
 `scripts/deploy-admin-vercel.sh` injects both API origins into the CSP
 `connect-src` — run it per the Render guide, same commands.

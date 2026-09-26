@@ -35,14 +35,28 @@ RUN mkdir -p /opt/voice-models/piper && \
     echo "5efe09e69902187827af646e1a6e9d269dee769f9877d17b16b1b46eeaaf019f  /opt/voice-models/piper/en_US-lessac-medium.onnx" | sha256sum -c - && \
     echo "efe19c417bed055f2d69908248c6ba650fa135bc868b0e6abb3da181dab690a0  /opt/voice-models/piper/en_US-lessac-medium.onnx.json" | sha256sum -c -
 
+# Faster-Whisper verifier weights must be a LOCAL directory — the verifier
+# refuses model IDs like "base.en" (see FasterWhisperVerifier.load). Bundle
+# them at build time, pinned to a revision.
+RUN python -c "\
+from huggingface_hub import snapshot_download; \
+snapshot_download(repo_id='Systran/faster-whisper-base.en', \
+    revision='3d3d5dee26484f91867d81cb899cfcf72b96be6c', \
+    local_dir='/opt/stt-models/faster-whisper-base.en')" && \
+    rm -rf /opt/stt-models/faster-whisper-base.en/.cache
+
 
 FROM python:3.11.13-slim-bookworm@sha256:86adf8dbadc3d6e82ee5dd2c74bec2e1c2467cdad47886280501df722372d2e1
 
+# STT verifier + TTS voice resolve to the bundled models by default
 ENV ENVIRONMENT=production \
     LOG_LEVEL=INFO \
     PATH="/opt/venv/bin:${PATH}" \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    STT_VERIFY_MODEL=/opt/stt-models/faster-whisper-base.en \
+    TTS_MODEL_PATH=en_US-lessac-medium \
+    TTS_CONFIG_PATH=/opt/voice-models/piper/en_US-lessac-medium.onnx.json
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
@@ -53,6 +67,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /opt/voice-models /opt/voice-models
+COPY --from=builder /opt/stt-models /opt/stt-models
 COPY api ./api
 COPY data ./data
 COPY service ./service

@@ -66,7 +66,8 @@ AI service:
 - `LEARNER_STATE_API_URL` = same backend internal URL as above
 - `GROQ_API_KEYS` and/or `GEMINI_API_KEY` — without either, AI chat falls back
   to templates and looks "alive but dumb"
-- `STT_MODEL_NAME=small` on `standard` — bump plan before raising to large-v3
+- No STT/TTS vars needed — `Dockerfile.prod` bundles the faster-whisper
+  `base.en` verifier weights and the Piper voice
 
 Backend runs `alembic upgrade head` in `scripts/entrypoint.sh` on every boot —
 first deploy migrates the empty Postgres automatically.
@@ -85,11 +86,15 @@ ENABLE_HOSTED_DEPLOYMENTS=1 bash ../scripts/deploy-admin-vercel.sh
 `deploy-admin-vercel.sh` validates the env, injects the API origins into the
 CSP `connect-src`, builds, and `vercel deploy --prod --prebuilt`.
 
+`VITE_BACKEND_URL`/`VITE_AI_URL` must include the `/api/v1` suffix — e.g.
+`https://<backend>.onrender.com/api/v1` — the frontends use them verbatim and
+append no prefix.
+
 Flutter web:
 
 ```bash
 cd flutter-app
-# fill assets/env/prod_config (API_BASE_URL=https://api.<domain>, …)
+# fill assets/env/prod_config (API_BASE_URL=https://api.<domain>/api/v1, …)
 bash ../scripts/deploy-flutter-vercel.sh
 ```
 
