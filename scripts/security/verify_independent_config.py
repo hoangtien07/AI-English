@@ -55,6 +55,7 @@ LEGACY_RUNTIME_MARKERS = (
     "admin.lexilingo.me",
     "www.lexilingo.me",
     "https://lexilingo.me",
+    "lexilingo.app",
     "lexilingo-88492",
     "lexilingo-backend.onrender.com",
 )

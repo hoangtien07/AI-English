@@ -9,9 +9,7 @@ _transform: true
 # which substitutes every ${VAR} below from the environment (optionally
 # sourced from kong-hybrid.env) and writes kong.hybrid.yml, the file the
 # compose service actually mounts.
-# Upstreams:
-# - Backend: Render
-# - AI Service: Cloudflare Tunnel
+# Upstream base URLs come from BACKEND_UPSTREAM_URL / AI_UPSTREAM_URL.
 
 consumers:
   - username: mobile-app

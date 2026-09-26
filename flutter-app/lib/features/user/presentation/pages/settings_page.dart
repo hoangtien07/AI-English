@@ -980,6 +980,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     );
                   }
                   code = snap.data!['referral_code'] as String? ?? '';
+                  final referralLink = snap.data!['referral_link'] as String?;
                   final total =
                       (snap.data!['total_referrals'] as num?)?.toInt() ?? 0;
                   return Column(
@@ -1049,7 +1050,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         onPressed: () {
                           Share.share(
                             '${'settings.invite_message'.tr()}\n\n'
-                            'https://lexilingo.app/referral/$code',
+                            '${referralLink ?? code}',
                           );
                         },
                       ),

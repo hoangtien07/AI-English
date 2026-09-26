@@ -6,7 +6,8 @@ import 'package:lexilingo_app/core/services/app_navigation_service.dart';
 
 /// Handles incoming deep links and universal links.
 ///
-/// URL scheme: lexilingo://  or  https://lexilingo.app/
+/// URL scheme: lexilingo-app://  (or an https:// universal link on the app's
+/// public domain once assetlinks / apple-app-site-association are published)
 ///
 /// Supported paths:
 ///   /course/{id}          → navigate to course roadmap
