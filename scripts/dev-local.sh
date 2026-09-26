@@ -30,24 +30,26 @@ is_ignored_file() {
     git -C "$RepositoryRoot" check-ignore --quiet -- "$1"
 }
 
-# Reads KEY=VALUE lines (matching dev-local.ps1's parser) into the named
-# associative array. Values are returned trimmed; no values are printed.
-read_environment_values() {
-    local path="$1" out_var="$2"
+# Prints the trimmed value of KEY in a KEY=VALUE env file (matching
+# dev-local.ps1's parser: optional `export`, surrounding whitespace stripped).
+# Exits 1 when the key is absent; no other values are printed.
+env_file_value() {
+    local path="$1" want="$2"
     local line trimmed key value
-    declare -n values="$out_var"
-    values=()
     while IFS= read -r line || [[ -n "$line" ]]; do
         trimmed="${line#"${line%%[![:space:]]*}"}"
         trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
         [[ -z "$trimmed" || "$trimmed" == \#* ]] && continue
         if [[ "$trimmed" =~ ^(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
             key="${BASH_REMATCH[2]}"
+            [[ "$key" == "$want" ]] || continue
             value="${BASH_REMATCH[3]}"
             value="${value%"${value##*[![:space:]]}"}"
-            values["$key"]="$value"
+            printf '%s' "$value"
+            return 0
         fi
     done < "$path"
+    return 1
 }
 
 assert_environment_files() {
@@ -59,31 +61,25 @@ assert_environment_files() {
 }
 
 assert_required_environment_values() {
-    local file_label="$1" values_var="$2"
+    local file_label="$1" path="$2"
     shift 2
-    local required_names=("$@")
-    local missing=() name
-    declare -n values="$values_var"
-    for name in "${required_names[@]}"; do
-        [[ -n "${values[$name]:-}" ]] || missing+=("${file_label}:${name}")
+    local missing=() name value
+    for name in "$@"; do
+        value="$(env_file_value "$path" "$name" || true)"
+        [[ -n "$value" ]] || missing+=("${file_label}:${name}")
     done
     ((${#missing[@]} == 0)) || die "Required local environment values are missing or empty: ${missing[*]}. Values were not displayed."
 }
 
 assert_core_environment() {
     assert_environment_files
-    local root_values backend_values
-    read_environment_values "$RootEnvironmentFile" root_values
-    assert_required_environment_values ".env" root_values POSTGRES_PASSWORD SECRET_KEY ALLOWED_ORIGINS
-    read_environment_values "$BackendEnvironmentFile" backend_values
-    assert_required_environment_values "backend-service/.env" backend_values APP_ENV DATABASE_URL SECRET_KEY ALLOWED_ORIGINS ALLOWED_HOSTS REDIS_URL AI_SERVICE_URL
+    assert_required_environment_values ".env" "$RootEnvironmentFile" POSTGRES_PASSWORD SECRET_KEY ALLOWED_ORIGINS
+    assert_required_environment_values "backend-service/.env" "$BackendEnvironmentFile" APP_ENV DATABASE_URL SECRET_KEY ALLOWED_ORIGINS ALLOWED_HOSTS REDIS_URL AI_SERVICE_URL
 }
 
 assert_full_environment() {
     assert_core_environment
-    local root_values
-    read_environment_values "$RootEnvironmentFile" root_values
-    assert_required_environment_values ".env" root_values AI_ADMIN_API_KEY GEMINI_API_KEY
+    assert_required_environment_values ".env" "$RootEnvironmentFile" AI_ADMIN_API_KEY GEMINI_API_KEY
 }
 
 compose() {
@@ -173,8 +169,10 @@ declared_compose_volumes() {
 }
 
 reset_data_volumes() {
-    local declared targets=() volume logical_name
-    mapfile -t declared < <(declared_compose_volumes)
+    local declared=() targets=() volume logical_name d
+    while IFS= read -r d; do
+        declared+=("$d")
+    done < <(declared_compose_volumes)
     while IFS= read -r volume; do
         [[ -n "$volume" ]] || continue
         logical_name="$(docker volume inspect --format '{{ index .Labels "com.docker.compose.volume" }}' "$volume" 2>/dev/null | tr -d '[:space:]')" \
@@ -182,7 +180,6 @@ reset_data_volumes() {
         [[ -n "$logical_name" ]] || die "Refusing reset-data because Compose volume '$volume' has an ambiguous label."
         local found=""
         if ((${#declared[@]} > 0)); then
-            local d
             for d in "${declared[@]}"; do [[ "$d" == "$logical_name" ]] && found=1; done
         fi
         [[ -n "$found" ]] || die "Refusing reset-data because Compose volume '$volume' is outside this file's declared local data contract."
@@ -196,11 +193,15 @@ reset_local_data() {
     assert_not_running_tests
     [[ "$confirm" == "$ResetConfirmation" ]] || die "reset-data is destructive and requires the '$ResetConfirmation' confirmation argument. No containers or volumes were changed."
     assert_core_environment
-    local volumes=()
-    mapfile -t volumes < <(reset_data_volumes)
+    local volumes=() volume
+    while IFS= read -r volume; do
+        volumes+=("$volume")
+    done < <(reset_data_volumes)
     ((${#volumes[@]} > 0)) || { info "No existing local Compose data volumes were found for project '$ProjectName'; nothing was reset."; return; }
     info "The following exact local Compose volumes will be removed: ${volumes[*]}"
-    compose stop
+    # `down` (no --volumes) removes this project's containers: `docker volume rm`
+    # refuses volumes still referenced by merely-stopped containers.
+    compose down
     docker volume rm -- "${volumes[@]}" || die "One or more exact local Compose volumes could not be removed. No broader cleanup was attempted."
     info "Local Compose data was reset. Run './scripts/dev-local.sh up-core' or './scripts/dev-local.sh up-full' to create fresh local data."
 }

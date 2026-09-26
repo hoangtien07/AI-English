@@ -118,24 +118,35 @@ inject_api_origins_into_csp() {
     for key in VITE_BACKEND_URL VITE_AI_URL VITE_AI_ADMIN_URL; do
         url="$(env_value "$key")"
         [[ -z "$url" ]] && continue
-        origin="$(printf '%s' "$url" | sed -E 's|^(https?://[^/]+).*|\1|')"
-        [[ -n "$origin" && " $origins " != *" $origin "* ]] && origins="$origins $origin"
+        origin="$(printf '%s' "$url" | sed -E 's|^(https?://[^/?#]+).*|\1|')"
+        if [[ ! "$origin" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?$ ]]; then
+            echo -e "${RED}✗${NC} $key value '$url' is not a valid http(s) origin for CSP connect-src"
+            exit 1
+        fi
+        [[ " $origins " != *" $origin "* ]] && origins="$origins $origin"
     done
     origins="${origins# }"
     if [[ -z "$origins" ]]; then
         echo -e "${YELLOW}⚠${NC} No API origins found to add to CSP connect-src"
         return
     fi
-    if ! grep -q "connect-src 'self'" "$vercel_json"; then
-        echo -e "${RED}✗${NC} vercel.json CSP does not contain the expected \"connect-src 'self'\" marker"
+    if ! grep -q "connect-src " "$vercel_json"; then
+        echo -e "${RED}✗${NC} vercel.json CSP does not contain a connect-src directive"
         exit 1
     fi
-    if grep -q "connect-src 'self' http" "$vercel_json"; then
-        echo -e "${GREEN}✓${NC} CSP connect-src already includes API origins"
+    # Merge, don't skip: a previous deploy may have injected different origins,
+    # so check each configured origin individually and append only the missing.
+    local current missing=""
+    current="$(grep -o "connect-src [^;\"']*" "$vercel_json" | head -n 1)"
+    for origin in $origins; do
+        [[ " $current " != *" $origin "* ]] && missing="$missing $origin"
+    done
+    if [[ -z "$missing" ]]; then
+        echo -e "${GREEN}✓${NC} CSP connect-src already includes all configured API origins"
         return
     fi
-    sed -i "s|connect-src 'self'|connect-src 'self' $origins|" "$vercel_json"
-    echo -e "${GREEN}✓${NC} CSP connect-src extended with: $origins"
+    sed -i "s|connect-src |connect-src${missing} |" "$vercel_json"
+    echo -e "${GREEN}✓${NC} CSP connect-src extended with:$missing"
 }
 
 clear 2>/dev/null || true

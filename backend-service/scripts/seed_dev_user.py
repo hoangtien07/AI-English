@@ -23,7 +23,8 @@ Usage:
 
 Environment overrides:
     SEED_TARGET_EMAIL     account to seed (default: dev-user@example.com)
-    SEED_TARGET_PASSWORD  local-login password to set (default: password)
+    SEED_TARGET_PASSWORD  local-login password to set (required — no default,
+                          so a guessable password never lands on a reachable DB)
 """
 
 import asyncio
@@ -50,7 +51,9 @@ from app.models.games import XPTransaction
 # ─────────────────────────────────────────────
 
 TARGET_EMAIL = os.environ.get("SEED_TARGET_EMAIL", "dev-user@example.com")
-NEW_PASSWORD = os.environ.get("SEED_TARGET_PASSWORD", "password")
+NEW_PASSWORD = os.environ.get("SEED_TARGET_PASSWORD", "")
+if not NEW_PASSWORD:
+    sys.exit("SEED_TARGET_PASSWORD is required (e.g. SEED_TARGET_PASSWORD=local-secret ...).")
 
 # Courses to enroll + target progress %
 COURSE_TARGETS = [

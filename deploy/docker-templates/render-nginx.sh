@@ -50,9 +50,12 @@ if ! command -v envsubst >/dev/null 2>&1; then
 fi
 
 mkdir -p "$OUTPUT_DIR"
+# Substitute only our placeholders: a bare envsubst would also erase nginx's
+# own variables ($host, $request_uri, ...) in the rendered config.
+subst_vars="$(printf '${%s} ' "${required[@]}")"
 shopt -s nullglob
 for template in "$TEMPLATE_DIR"/*.template; do
   output="$OUTPUT_DIR/$(basename "${template%.template}")"
-  envsubst < "$template" > "$output"
+  envsubst "$subst_vars" < "$template" > "$output"
   printf 'Rendered %s\n' "$output"
 done
