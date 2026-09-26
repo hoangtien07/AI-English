@@ -50,5 +50,8 @@ if ! command -v envsubst >/dev/null 2>&1; then
   exit 1
 fi
 
-envsubst < "$TEMPLATE" > "$OUTPUT"
+# Substitute only the declared inputs — bare envsubst would also blank out
+# Kong/Nginx runtime variables ($host, $request_uri, ...) inside the template.
+subst_vars="$(printf '${%s} ' "${required[@]}")"
+envsubst "$subst_vars" < "$TEMPLATE" > "$OUTPUT"
 printf 'Rendered %s\n' "$OUTPUT"

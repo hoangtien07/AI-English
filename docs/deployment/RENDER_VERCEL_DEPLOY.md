@@ -53,6 +53,8 @@ Backend:
 - `YOUTUBE_API_KEY`/`NEWSAPI_KEY`/`NEWSDATA_KEY` (optional content APIs)
 
 AI service:
+- `ALLOWED_ORIGINS` = `https://admin.<domain>,https://www.<domain>` — required;
+  the production validator rejects the built-in localhost defaults
 - `MONGODB_ATLAS_URI` = `mongodb+srv://user:pass@cluster.mongodb.net/`
 - `LEARNER_STATE_API_URL` = same backend internal URL as above
 - `GROQ_API_KEYS` and/or `GEMINI_API_KEY` — without either, AI chat falls back

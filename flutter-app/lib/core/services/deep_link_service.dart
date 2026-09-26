@@ -30,6 +30,14 @@ class DeepLinkService {
   String? pendingResetToken;
 
   Future<void> init() async {
+    // Web: the SPA is served directly at the shared URL (e.g.
+    // https://app.example.com/referral/CODE); app_links provides no initial
+    // link or stream there, so capture the launch URL ourselves.
+    if (kIsWeb) {
+      _captureWebLaunch(Uri.base);
+      return;
+    }
+
     // Handle cold-start link (app launched from a link)
     try {
       final initial = await _appLinks.getInitialLink();
@@ -43,6 +51,17 @@ class DeepLinkService {
       _route,
       onError: (e) => debugPrint('DeepLinkService stream error: $e'),
     );
+  }
+
+  void _captureWebLaunch(Uri base) {
+    // Hash-based routing puts the app path in the fragment (#/referral/CODE);
+    // path-served links (Vercel rewrite of /referral/CODE) keep it in path.
+    var target = base;
+    if (base.pathSegments.isEmpty && base.fragment.isNotEmpty) {
+      target = Uri.parse(base.fragment);
+    }
+    if (target.pathSegments.isEmpty) return;
+    _route(target);
   }
 
   void dispose() => _sub?.cancel();

@@ -41,9 +41,12 @@ services:
         value: "false"
       - key: LOG_LEVEL
         value: INFO
-      # No gateway in this topology — the backend terminates CORS itself.
+      # No gateway in this topology — the backend must emit CORS headers
+      # itself or browsers block every cross-origin call from the Vercel apps.
       - key: ENABLE_APP_CORS
-        value: "false"
+        value: "true"
+      - key: CORS_ALLOW_ORIGIN_REGEX
+        value: ""  # empty disables the regex; the production validator rejects the localhost default
       - key: ALLOWED_ORIGINS
         sync: false  # e.g. https://admin.<domain>,https://www.<domain>,https://<domain>
       - key: ALLOWED_HOSTS
@@ -117,6 +120,12 @@ services:
       - fromGroup: lexilingo-shared
       - key: ENVIRONMENT
         value: production
+      # Production validator rejects the built-in localhost origins/regex —
+      # without these two, the service raises at startup and never goes live.
+      - key: ALLOWED_ORIGINS
+        sync: false  # e.g. https://admin.<domain>,https://www.<domain>
+      - key: CORS_ALLOW_ORIGIN_REGEX
+        value: ""
       - key: MONGODB_ATLAS_URI
         sync: false  # mongodb+srv://... from Atlas (or MONGODB_URI)
       - key: MONGODB_DATABASE
@@ -173,7 +182,7 @@ envVarGroups:
       - key: SECRET_KEY
         generateValue: true  # JWT secret — MUST be identical on both services
       - key: AI_ADMIN_API_KEY
-        generateValue: true  # backend → ai-service X-Admin-Key
+        generateValue: true  # backend → ai-service X-Admin-Key — never copy into VITE_* vars (browsers would ship it)
       - key: LEARNER_STATE_INTERNAL_TOKEN
         generateValue: true  # ai-service → backend internal channel (>=32 chars)
       - key: AI_AUDIT_INGEST_SECRET
