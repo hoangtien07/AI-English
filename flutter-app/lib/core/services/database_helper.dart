@@ -333,7 +333,7 @@ CREATE TABLE user_progress (
       {
         'id': 'demo_user_001',
         'name': 'Alex Nguyen',
-        'email': 'alex.nguyen@lexilingo.app',
+        'email': 'alex.nguyen@example.com',
         'avatarUrl':
             'https://ui-avatars.com/api/?name=Alex+Nguyen&background=6366f1&color=fff',
         'totalXP': 1240,
@@ -345,7 +345,7 @@ CREATE TABLE user_progress (
       {
         'id': 'demo_user_002',
         'name': 'Minh Tran',
-        'email': 'minh.tran@lexilingo.app',
+        'email': 'minh.tran@example.com',
         'avatarUrl':
             'https://ui-avatars.com/api/?name=Minh+Tran&background=14b8a6&color=fff',
         'totalXP': 860,
@@ -357,7 +357,7 @@ CREATE TABLE user_progress (
       {
         'id': 'demo_user_003',
         'name': 'Linh Pham',
-        'email': 'linh.pham@lexilingo.app',
+        'email': 'linh.pham@example.com',
         'avatarUrl':
             'https://ui-avatars.com/api/?name=Linh+Pham&background=f97316&color=fff',
         'totalXP': 430,

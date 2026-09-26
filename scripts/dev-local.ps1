@@ -74,7 +74,7 @@ function Assert-RequiredEnvironmentValues([hashtable]$Values, [string]$FileLabel
 
 function Assert-CoreEnvironment {
     Assert-EnvironmentFiles
-    Assert-RequiredEnvironmentValues (Get-EnvironmentValues $RootEnvironmentFile) ".env" @("POSTGRES_PASSWORD", "SECRET_KEY", "ALLOWED_ORIGINS", "FIREBASE_PROJECT_ID")
+    Assert-RequiredEnvironmentValues (Get-EnvironmentValues $RootEnvironmentFile) ".env" @("POSTGRES_PASSWORD", "SECRET_KEY", "ALLOWED_ORIGINS")
     Assert-RequiredEnvironmentValues (Get-EnvironmentValues $BackendEnvironmentFile) "backend-service/.env" @("APP_ENV", "DATABASE_URL", "SECRET_KEY", "ALLOWED_ORIGINS", "ALLOWED_HOSTS", "REDIS_URL", "AI_SERVICE_URL")
 }
 

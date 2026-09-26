@@ -101,7 +101,7 @@ class ContentAgentService:
                     "license_id": record.license_id or "LicenseRef-Admin-Owned",
                     "license_url": (
                         record.license_url
-                        or "https://lexilingo.me/legal/content-upload-rights"
+                        or "https://hoangtien07.me/legal/content-upload-rights"
                     ),
                     "attribution_text": (
                         record.attribution_text
@@ -192,9 +192,9 @@ class ContentAgentService:
                     snapshot_id=f"{source_name}:job:{job_id}:{snapshot_checksum}",
                     source_name=source_name,
                     source_version="job-upload-v1",
-                    official_url="https://lexilingo.me/admin/content-agent/uploads",
+                    official_url="https://hoangtien07.me/admin/content-agent/uploads",
                     license_id="LicenseRef-Admin-Owned",
-                    license_url="https://lexilingo.me/legal/content-upload-rights",
+                    license_url="https://hoangtien07.me/legal/content-upload-rights",
                     attribution_text="Administrator-owned or licensed upload",
                     retrieved_at=_stable_manifest_time(
                         source_name,

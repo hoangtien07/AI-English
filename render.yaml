@@ -1,0 +1,189 @@
+# Render Blueprint — LexiLingo self-host backend stack.
+# Render Dashboard → New → Blueprint → select this repo, branch `tienph`.
+# Fill every `sync: false` variable when Render prompts (see checklist in
+# docs/deployment/RENDER_VERCEL_DEPLOY.md).
+#
+# NOT covered by this file (Render has no managed MongoDB, and frontends go
+# to Vercel):
+#   * MongoDB for ai-service → create a MongoDB Atlas M0 cluster, paste the
+#     connection string into MONGODB_ATLAS_URI.
+#   * admin-service + flutter-app web builds → Vercel.
+#   * DNS records (api./ai./admin./www. of the owned domain).
+#   * Celery reminder worker/beat — Render's free plan covers web services
+#     only; add `type: worker` entries when REMINDERS_ENABLED turns on.
+
+services:
+  # ── Backend API (FastAPI, Dockerfile.prod, alembic in entrypoint) ──
+  - type: web
+    name: lexilingo-backend
+    runtime: docker
+    dockerfilePath: backend-service/Dockerfile.prod
+    dockerContext: backend-service
+    region: singapore
+    plan: starter
+    branch: tienph
+    healthCheckPath: /health
+    autoDeployTrigger: "off"
+    envVars:
+      - fromGroup: lexilingo-shared
+      - key: DATABASE_URL
+        fromDatabase:
+          name: lexilingo-postgres
+          property: connectionString  # config normalises to postgresql+asyncpg
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: lexilingo-redis
+          property: connectionString
+      - key: APP_ENV
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: LOG_LEVEL
+        value: INFO
+      # No gateway in this topology — the backend must emit CORS headers
+      # itself or browsers block every cross-origin call from the Vercel apps.
+      - key: ENABLE_APP_CORS
+        value: "true"
+      - key: CORS_ALLOW_ORIGIN_REGEX
+        value: ""  # empty disables the regex; the production validator rejects the localhost default
+      - key: ALLOWED_ORIGINS
+        sync: false  # e.g. https://admin.<domain>,https://www.<domain>,https://<domain>
+      - key: ALLOWED_HOSTS
+        sync: false  # e.g. api.<domain>,<service>.onrender.com
+      - key: APP_PUBLIC_URL
+        sync: false  # public web origin, e.g. https://www.<domain> (referral links)
+      - key: AI_SERVICE_URL
+        sync: false  # e.g. https://lexilingo-ai.onrender.com/api/v1
+      # Google sign-in + admin OAuth (owned GCP project)
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_ADMIN_CLIENT_ID
+        sync: false
+      - key: ADMIN_EMAIL_WHITELIST
+        sync: false
+      - key: SUPER_ADMIN_EMAIL_WHITELIST
+        sync: false
+      # Firebase web push/auth (owned project; JSON content pasted as env)
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_CREDENTIALS_JSON
+        sync: false
+      # Outbound email (optional — without SMTP_* the API still answers
+      # forgot-password/verify but only logs the message)
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USE_TLS
+        value: "true"
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: PASSWORD_RESET_URL_BASE_PRODUCTION
+        sync: false  # e.g. https://www.<domain>/reset-password
+      - key: EMAIL_VERIFICATION_URL_BASE_PRODUCTION
+        sync: false  # e.g. https://www.<domain>/verify-email
+      # Learner-state internal channel (token comes from the shared group;
+      # backend refuses to boot when ENABLED=true without it)
+      - key: LEARNER_STATE_ENABLED
+        value: "true"
+      - key: LEARNER_STATE_API_URL
+        sync: false  # https://lexilingo-backend.onrender.com/api/v1/internal
+      - key: REMINDERS_ENABLED
+        value: "false"
+      - key: REMINDER_DRY_RUN
+        value: "true"
+      # Optional external content APIs — leave empty to disable
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: NEWSAPI_KEY
+        sync: false
+      - key: NEWSDATA_KEY
+        sync: false
+
+  # ── AI service (FastAPI + torch/faster-whisper, Dockerfile.prod) ──
+  - type: web
+    name: lexilingo-ai
+    runtime: docker
+    dockerfilePath: ai-service/Dockerfile.prod
+    dockerContext: ai-service
+    region: singapore
+    plan: standard  # torch + STT models exceed the 512 MB free tier
+    branch: tienph
+    healthCheckPath: /live  # /health waits on full model readiness
+    autoDeployTrigger: "off"
+    envVars:
+      - fromGroup: lexilingo-shared
+      - key: ENVIRONMENT
+        value: production
+      # Production validator rejects the built-in localhost origins/regex —
+      # without these two, the service raises at startup and never goes live.
+      - key: ALLOWED_ORIGINS
+        sync: false  # e.g. https://admin.<domain>,https://www.<domain>
+      - key: CORS_ALLOW_ORIGIN_REGEX
+        value: ""
+      - key: MONGODB_ATLAS_URI
+        sync: false  # mongodb+srv://... from Atlas (or MONGODB_URI)
+      - key: MONGODB_DATABASE
+        value: lexilingo
+      - key: MONGODB_TLS_ALLOW_INVALID_CERTIFICATES
+        value: "false"
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: lexilingo-redis
+          property: connectionString
+      # ai-service calls the backend's /api/v1/internal over its public URL
+      # (Render web services have no private DNS); HTTPS is required by config.
+      - key: LEARNER_STATE_API_URL
+        sync: false  # https://lexilingo-backend.onrender.com/api/v1/internal
+      # LLM providers — Groq is the primary path (qwen3, reasoning off);
+      # Gemini is the fallback. At least one must be set for AI features.
+      - key: GROQ_API_KEYS
+        sync: false  # comma-separated, up to 7 keys
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: HUGGINGFACE_API_KEY
+        sync: false
+      # Voice/STT sizing for the standard (2 GB) plan — large-v3 does not fit.
+      - key: STT_MODEL_NAME
+        value: small
+      - key: STT_DEVICE
+        value: cpu
+      - key: STT_COMPUTE_TYPE
+        value: int8
+      - key: VOICE_DUPLEX_ENABLED
+        value: "false"
+
+  # ── Redis-compatible cache (Valkey) — private network only ──
+  - type: keyvalue
+    name: lexilingo-redis
+    region: singapore
+    plan: free
+    ipAllowList: []  # no public access — web services reach it internally
+
+databases:
+  - name: lexilingo-postgres
+    region: singapore
+    databaseName: lexilingo
+    user: lexilingo
+    plan: free  # Render free Postgres expires after 30 days — export or upgrade before then
+    ipAllowList: []  # private network only
+
+# Shared secrets — generateValue produces ONE value per group entry, so
+# backend and ai-service receive identical tokens.
+envVarGroups:
+  - name: lexilingo-shared
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true  # JWT secret — MUST be identical on both services
+      - key: AI_ADMIN_API_KEY
+        generateValue: true  # backend → ai-service X-Admin-Key — never copy into VITE_* vars (browsers would ship it)
+      - key: LEARNER_STATE_INTERNAL_TOKEN
+        generateValue: true  # ai-service → backend internal channel (>=32 chars)
+      - key: AI_AUDIT_INGEST_SECRET
+        generateValue: true  # ai-service → backend audit ingest

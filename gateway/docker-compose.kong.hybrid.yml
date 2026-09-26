@@ -1,3 +1,8 @@
+# Before `docker compose -f docker-compose.kong.hybrid.yml up`, render the
+# declarative config from its template (Kong does not expand env vars itself):
+#     ./kong/render-hybrid.sh
+# which reads ./kong/kong-hybrid.env (see kong-hybrid.env.example) and writes
+# ./kong/kong.hybrid.yml, the file mounted below.
 services:
   kong:
     image: kong:3.7

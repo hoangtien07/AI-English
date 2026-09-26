@@ -1,13 +1,16 @@
 """
-Setup Admin Users with Google OAuth Support
+Setup an Admin User with Google OAuth Support
 
-Creates or updates admin users to support Google OAuth login:
-- thefirestar312@gmail.com: Super Admin
-- nhthang312@gmail.com: Admin
+Creates or updates a single admin user to support Google OAuth login.
+
+Usage:
+    python3 scripts/setup_admin_oauth.py --email you@example.com \
+        [--role admin|super_admin] [--username name] [--display-name "Name"]
 
 Run this script after seeding roles and permissions.
 """
 
+import argparse
 import asyncio
 import sys
 from pathlib import Path
@@ -16,111 +19,94 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import AsyncSessionLocal
 from app.models.user import User
 from app.models.rbac import Role
 
 
-async def setup_admin_oauth():
-    """Create or update admin users with Google OAuth support."""
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--email", required=True, help="Email of the admin user to create or update")
+    parser.add_argument(
+        "--role",
+        choices=["admin", "super_admin"],
+        default="admin",
+        help="Role to assign (default: admin)",
+    )
+    parser.add_argument("--username", help="Username (default: email local part)")
+    parser.add_argument("--display-name", help="Display name (default: role name)")
+    return parser.parse_args()
+
+
+async def setup_admin_oauth() -> None:
+    args = _parse_args()
+    email = args.email.strip().lower()
+    username = (args.username or email.split("@")[0]).strip()
+    display_name = (args.display_name or args.role.replace("_", " ").title()).strip()
+
     async with AsyncSessionLocal() as db:
-        print(" Setting up admin users with Google OAuth...")
+        print(" Setting up admin user with Google OAuth...")
 
-        # Get roles
-        result = await db.execute(select(Role).where(Role.slug == "admin"))
-        admin_role = result.scalar_one_or_none()
-
-        result = await db.execute(select(Role).where(Role.slug == "super_admin"))
-        super_admin_role = result.scalar_one_or_none()
-
-        if not admin_role or not super_admin_role:
-            print(" Error: Roles not found. Please run Alembic migrations and seed_data.py first.")
+        result = await db.execute(select(Role).where(Role.slug == args.role))
+        role = result.scalar_one_or_none()
+        if not role:
+            print(f" Error: role '{args.role}' not found. Run Alembic migrations and seed roles first.")
             return
-
-        print(f"  Found roles: Admin (ID: {admin_role.id}), Super Admin (ID: {super_admin_role.id})")
-
-        # Admin users to setup — thefirestar312 = super_admin, nhthang312 = admin
-        admin_users = [
-            {
-                "email": "thefirestar312@gmail.com",
-                "username": "thefirestar312",
-                "display_name": "Super Admin",
-                "role_id": super_admin_role.id,
-                "role_name": "Super Admin",
-            },
-            {
-                "email": "nhthang312@gmail.com",
-                "username": "nhthang312",
-                "display_name": "Admin",
-                "role_id": admin_role.id,
-                "role_name": "Admin",
-            },
-        ]
+        print(f"  Found role: {role.slug} (ID: {role.id})")
 
         import bcrypt
         oauth_password_hash = bcrypt.hashpw(b"OAUTH_USER_NO_PASSWORD", bcrypt.gensalt(12)).decode()
 
-        for user_data in admin_users:
-            email = user_data["email"]
+        result = await db.execute(select(User).where(User.email == email))
+        user = result.scalar_one_or_none()
 
-            # Check if user exists
-            result = await db.execute(
-                select(User).where(User.email == email)
-            )
-            user = result.scalar_one_or_none()
+        if user:
+            old_role_id = user.role_id
+            user.add_provider("google")
+            # Only reset password to placeholder if user has no local credentials.
+            # Multi-provider accounts keep their real local password intact.
+            if not user.has_local_auth:
+                user.hashed_password = oauth_password_hash
+            user.role_id = role.id
+            user.display_name = display_name
+            user.is_verified = True
+            user.is_active = True
 
-            if user:
-                # Update existing user — fix role, provider, password
-                old_role_id = user.role_id
-
-                user.add_provider("google")
-                # Only reset password to placeholder if user has no local credentials.
-                # Multi-provider accounts keep their real local password intact.
-                if not user.has_local_auth:
-                    user.hashed_password = oauth_password_hash
-                user.role_id = user_data["role_id"]
-                user.display_name = user_data["display_name"]
-                user.is_verified = True
-                user.is_active = True
-
-                print(f"\n   Updated user: {email}")
-                print(f"     - Providers: {user.provider}")
-                print(f"     - Role: {user_data['role_name']}")
-                if old_role_id != user.role_id:
-                    print(f"     - Role ID changed: {old_role_id} → {user.role_id}")
-            else:
-                # Create new user — ensure unique username
-                username = user_data["username"]
-                base_username = username
-                counter = 1
-                while True:
-                    result = await db.execute(
-                        select(User).where(User.username == username)
-                    )
-                    if not result.scalar_one_or_none():
-                        break
-                    username = f"{base_username}{counter}"
-                    counter += 1
-
-                user = User(
-                    email=email,
-                    username=username,
-                    hashed_password=oauth_password_hash,
-                    display_name=user_data["display_name"],
-                    provider=["google"],
-                    role_id=user_data["role_id"],
-                    is_verified=True,
-                    is_active=True,
-                    level="A1",
+            print(f"\n   Updated user: {email}")
+            print(f"     - Providers: {user.provider}")
+            print(f"     - Role: {args.role}")
+            if old_role_id != user.role_id:
+                print(f"     - Role ID changed: {old_role_id} → {user.role_id}")
+        else:
+            base_username = username
+            counter = 1
+            while True:
+                result = await db.execute(
+                    select(User).where(User.username == username)
                 )
-                db.add(user)
+                if not result.scalar_one_or_none():
+                    break
+                username = f"{base_username}{counter}"
+                counter += 1
 
-                print(f"\n   Created user: {email}")
-                print(f"     - Username: {username}")
-                print(f"     - Provider: google")
-                print(f"     - Role: {user_data['role_name']}")
+            user = User(
+                email=email,
+                username=username,
+                hashed_password=oauth_password_hash,
+                display_name=display_name,
+                provider=["google"],
+                role_id=role.id,
+                is_verified=True,
+                is_active=True,
+                level="A1",
+            )
+            db.add(user)
+
+            print(f"\n   Created user: {email}")
+            print(f"     - Username: {username}")
+            print("     - Provider: google")
+            print(f"     - Role: {args.role}")
 
         await db.commit()
         print("\n Admin OAuth setup completed!")

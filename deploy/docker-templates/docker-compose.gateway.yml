@@ -1,5 +1,10 @@
 version: "3.9"
 
+# Before `docker compose -f docker-compose.gateway.yml up`, render the nginx
+# vhosts from their templates (nginx does not expand ${VAR} placeholders):
+#     ./render-nginx.sh
+# which reads ./gateway.env (see gateway.env.example) and writes
+# nginx/conf.d/*.conf, the directory mounted below.
 services:
   nginx:
     image: nginx:1.27-alpine

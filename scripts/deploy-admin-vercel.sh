@@ -107,6 +107,48 @@ validate_env_config() {
     fi
 }
 
+# The admin SPA calls the backend/AI APIs cross-origin, but the CSP in
+# vercel.json only allows connect-src 'self' + Google. Inject the configured
+# API origins into connect-src so deployed admin pages can actually reach the
+# APIs (the file is patched in the working tree before `vercel build`).
+inject_api_origins_into_csp() {
+    local vercel_json="$ADMIN_DIR/vercel.json"
+    local origins=""
+    local key url origin
+    for key in VITE_BACKEND_URL VITE_AI_URL VITE_AI_ADMIN_URL; do
+        url="$(env_value "$key")"
+        [[ -z "$url" ]] && continue
+        origin="$(printf '%s' "$url" | sed -E 's|^(https?://[^/?#]+).*|\1|')"
+        if [[ ! "$origin" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?$ ]]; then
+            echo -e "${RED}✗${NC} $key value '$url' is not a valid http(s) origin for CSP connect-src"
+            exit 1
+        fi
+        [[ " $origins " != *" $origin "* ]] && origins="$origins $origin"
+    done
+    origins="${origins# }"
+    if [[ -z "$origins" ]]; then
+        echo -e "${YELLOW}⚠${NC} No API origins found to add to CSP connect-src"
+        return
+    fi
+    if ! grep -q "connect-src " "$vercel_json"; then
+        echo -e "${RED}✗${NC} vercel.json CSP does not contain a connect-src directive"
+        exit 1
+    fi
+    # Merge, don't skip: a previous deploy may have injected different origins,
+    # so check each configured origin individually and append only the missing.
+    local current missing=""
+    current="$(grep -o "connect-src [^;\"']*" "$vercel_json" | head -n 1)"
+    for origin in $origins; do
+        [[ " $current " != *" $origin "* ]] && missing="$missing $origin"
+    done
+    if [[ -z "$missing" ]]; then
+        echo -e "${GREEN}✓${NC} CSP connect-src already includes all configured API origins"
+        return
+    fi
+    sed -i "s|connect-src |connect-src${missing} |" "$vercel_json"
+    echo -e "${GREEN}✓${NC} CSP connect-src extended with:$missing"
+}
+
 clear 2>/dev/null || true
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}║                                                          ║${NC}"
@@ -169,6 +211,8 @@ if [ "${DEPLOY_ADMIN_ASSUME_YES:-0}" != "1" ]; then
         exit 1
     fi
 fi
+
+inject_api_origins_into_csp
 
 echo ""
 echo -e "${BLUE}[3/5] Installing dependencies...${NC}"

@@ -47,7 +47,7 @@ services:
     mem_limit: 768m
     memswap_limit: 768m
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-nhthang312@gmail.com}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@example.com}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:?Set PGADMIN_DEFAULT_PASSWORD in .env}
       PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: "True"
       PGADMIN_CONFIG_LOGIN_BANNER: "'LexiLingo Database Management'"
@@ -244,7 +244,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       # Firebase
-      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:?Set FIREBASE_PROJECT_ID in .env}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_ADMIN_CLIENT_ID: ${GOOGLE_ADMIN_CLIENT_ID:-}
       LEARNER_STATE_ENABLED: ${LEARNER_STATE_ENABLED:-false}
@@ -282,7 +282,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       REMINDERS_ENABLED: ${REMINDERS_ENABLED:-false}
       REMINDER_DRY_RUN: ${REMINDER_DRY_RUN:-true}
-      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:?Set FIREBASE_PROJECT_ID in .env}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
     depends_on:
       postgres:
         condition: service_healthy

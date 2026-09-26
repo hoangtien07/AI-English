@@ -17,11 +17,10 @@ services:
       KONG_NGINX_WORKER_PROCESSES: "auto"
       KONG_REAL_IP_HEADER: X-Forwarded-For
       KONG_TRUSTED_IPS: 127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
-      KONG_MOBILE_API_KEY: ${KONG_MOBILE_API_KEY:?Set KONG_MOBILE_API_KEY in gateway/.env}
-      KONG_ADMIN_API_KEY: ${KONG_ADMIN_API_KEY:?Set KONG_ADMIN_API_KEY in gateway/.env}
-      KONG_INTERNAL_API_KEY: ${KONG_INTERNAL_API_KEY:?Set KONG_INTERNAL_API_KEY in gateway/.env}
+      # NOTE: declarative mode cannot read env vars -- the X-Api-Key credentials
+      # live in kong.yml (committed dev-only keys for this local profile).
     ports:
-      - "8008:8000"  # Public gateway endpoint
+      - "127.0.0.1:8008:8000"  # Local dev: keep the dev keys off the LAN
       - "127.0.0.1:8009:8001"  # Admin API is local-only
     volumes:
       - ./kong/kong.yml:/etc/kong/kong.yml:ro

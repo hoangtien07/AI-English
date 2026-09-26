@@ -205,7 +205,7 @@ async def _run_content_agent(job_id: uuid.UUID) -> dict:
                         or record.get("record_id"),
                         "license_id": "LicenseRef-Admin-Owned",
                         "license_url": (
-                            "https://lexilingo.me/legal/content-upload-rights"
+                            "https://hoangtien07.me/legal/content-upload-rights"
                         ),
                         "attribution_text": (
                             "Administrator-owned or licensed upload"

@@ -7,21 +7,32 @@ _transform: true
 # - Quota / Throttling: rate-limiting
 # - Observability: correlation-id + prometheus + opentelemetry
 
+# Dev-only credentials for the local compose profile (`docker compose
+# --profile gateway`). Every route below uses key-auth, so a consumer without
+# credentials can never authenticate. Any real deployment must replace these
+# with machine-local keys that are never committed -- the hybrid config is
+# rendered from kong.hybrid.yml.template via render-hybrid.sh for that.
 consumers:
   - username: mobile-app
     custom_id: mobile-app
     acls:
       - group: mobile-app
+    keyauth_credentials:
+      - key: local-dev-mobile-gateway-key
 
   - username: admin-web
     custom_id: admin-web
     acls:
       - group: admin-web
+    keyauth_credentials:
+      - key: local-dev-admin-gateway-key
 
   - username: internal-backend
     custom_id: internal-backend
     acls:
       - group: internal
+    keyauth_credentials:
+      - key: local-dev-internal-gateway-key
 
 plugins:
   - name: cors

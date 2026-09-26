@@ -1,7 +1,7 @@
 """
-seed_nhthang.py
-───────────────
-Set up the nhthang312@gmail.com account for local development/testing.
+seed_dev_user.py
+────────────────
+Set up a learner account for local development/testing.
 
 Actions:
   1. Update provider → add 'local' (keeps existing 'google' if already linked)
@@ -19,7 +19,12 @@ Note on admin dashboard security:
 
 Usage:
     cd backend-service
-    venv/bin/python3 scripts/seed_nhthang.py
+    SEED_TARGET_EMAIL=you@example.com venv/bin/python3 scripts/seed_dev_user.py
+
+Environment overrides:
+    SEED_TARGET_EMAIL     account to seed (default: dev-user@example.com)
+    SEED_TARGET_PASSWORD  local-login password to set (required — no default,
+                          so a guessable password never lands on a reachable DB)
 """
 
 import asyncio
@@ -45,8 +50,10 @@ from app.models.games import XPTransaction
 # Config
 # ─────────────────────────────────────────────
 
-TARGET_EMAIL = "nhthang312@gmail.com"
-NEW_PASSWORD = "thang123"
+TARGET_EMAIL = os.environ.get("SEED_TARGET_EMAIL", "dev-user@example.com")
+NEW_PASSWORD = os.environ.get("SEED_TARGET_PASSWORD", "")
+if not NEW_PASSWORD:
+    sys.exit("SEED_TARGET_PASSWORD is required (e.g. SEED_TARGET_PASSWORD=local-secret ...).")
 
 # Courses to enroll + target progress %
 COURSE_TARGETS = [

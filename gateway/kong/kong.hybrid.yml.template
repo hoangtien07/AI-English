@@ -1,26 +1,37 @@
 _format_version: "3.0"
 _transform: true
 
-# Hybrid deployment profile
-# Upstreams:
-# - Backend: Render
-# - AI Service: Cloudflare Tunnel
+# Hybrid deployment profile -- TEMPLATE.
+# Kong's declarative loader reads this file verbatim and does NOT expand
+# environment variables, so never mount this template directly. Render it
+# first:
+#     ./render-hybrid.sh
+# which substitutes every ${VAR} below from the environment (optionally
+# sourced from kong-hybrid.env) and writes kong.hybrid.yml, the file the
+# compose service actually mounts.
+# Upstream base URLs come from BACKEND_UPSTREAM_URL / AI_UPSTREAM_URL.
 
 consumers:
   - username: mobile-app
     custom_id: mobile-app
     acls:
       - group: mobile-app
+    keyauth_credentials:
+      - key: ${KONG_MOBILE_API_KEY}
 
   - username: admin-web
     custom_id: admin-web
     acls:
       - group: admin-web
+    keyauth_credentials:
+      - key: ${KONG_ADMIN_API_KEY}
 
   - username: internal-backend
     custom_id: internal-backend
     acls:
       - group: internal
+    keyauth_credentials:
+      - key: ${KONG_INTERNAL_API_KEY}
 
 plugins:
   - name: cors

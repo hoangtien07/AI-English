@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import build_cache_key, delete_cached
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.gamification import UserWallet, WalletTransaction
@@ -69,7 +70,7 @@ async def get_my_referral_code(
 
     return ReferralInfoResponse(
         referral_code=current_user.referral_code,
-        referral_link=f"https://lexilingo.app/referral/{current_user.referral_code}",
+        referral_link=f"{settings.APP_PUBLIC_URL}/referral/{current_user.referral_code}",
         referred_by=current_user.referred_by,
         total_referrals=count,
     )

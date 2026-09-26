@@ -236,7 +236,6 @@ printf "${GREEN}║              ✅ Flutter Vercel Deploy Complete           �
 printf "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}\n\n"
 
 printf "${BLUE}Post-deploy quick checks:${NC}\n"
-printf "  1. Open login page and test Google sign-in popup/redirect\n"
+printf "  1. Open the app and confirm email login works (Google sign-in is disabled in this build: FIREBASE_ENABLED=false)\n"
 printf "  2. Confirm API base URL in browser console is production\n"
-printf "  3. Verify Firebase authorized domains include only owned domains\n"
-printf "  4. Verify Vercel project has only explicitly approved custom domains\n\n"
+printf "  3. Verify Vercel project has only explicitly approved custom domains\n\n"

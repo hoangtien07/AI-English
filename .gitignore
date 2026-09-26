@@ -76,7 +76,7 @@ logs/
 **/GoogleService-Info.plist
 **/firebase_options.dart
 **/*firebase-adminsdk*.json
-flutter-app/lexilingo-88492-firebase-adminsdk-fbsvc-aa6640bef2.json
+flutter-app/*-firebase-adminsdk-*.json
 
 # Keep template files
 !**/google-services.json.example
@@ -181,3 +181,7 @@ docs/technical-report/*.aux
 docs/technical-report/*.log
 docs/technical-report/*.toc
 docs/technical-report/*.out
+
+# Rendered gateway configs (contain deployment secrets; render from templates)
+gateway/kong/kong.hybrid.yml
+deploy/docker-templates/nginx/conf.d/*.conf

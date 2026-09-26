@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://lexilingo.me/contracts/content-agent/course-artifact-v2.schema.json",
+  "$id": "https://hoangtien07.me/contracts/content-agent/course-artifact-v2.schema.json",
   "title": "LexiLingo Content Agent Artifact v2",
   "type": "object",
   "additionalProperties": false,

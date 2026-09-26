@@ -4,7 +4,9 @@ import java.util.Properties
 plugins {
     id("com.android.application")
     // START: FlutterFire Configuration
-    id("com.google.gms.google-services")
+    // Firebase is enabled on web only (FIREBASE_ENABLED). There is no
+    // google-services.json for Android, so the google-services plugin must
+    // stay unapplied or every Gradle build fails looking for the file.
     // END: FlutterFire Configuration
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.

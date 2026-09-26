@@ -7,9 +7,9 @@ def test_review_reminder_templates_render():
     context = {
         "display_name": "Learner",
         "due_count": "5",
-        "review_link": "https://lexilingo.me/vocabulary/review",
-        "settings_link": "https://lexilingo.me/settings",
-        "support_email": "nhthang2077@gmail.com",
+        "review_link": "https://hoangtien07.me/vocabulary/review",
+        "settings_link": "https://hoangtien07.me/settings",
+        "support_email": "seeded-learner@example.com",
     }
 
     html = EmailService._render_template("vocabulary_review_reminder.html", context)
@@ -17,7 +17,7 @@ def test_review_reminder_templates_render():
 
     assert "Learner" in html
     assert "5" in text
-    assert "https://lexilingo.me/vocabulary/review" in text
+    assert "https://hoangtien07.me/vocabulary/review" in text
 
 
 @pytest.mark.asyncio

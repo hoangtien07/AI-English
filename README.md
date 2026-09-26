@@ -138,11 +138,12 @@ The system is organized into 8 architectural layers:
 
 ## 5. Getting Started
 
-### Local development on Windows / PowerShell
+### Local development helper
 
-The local-only Compose interface is `scripts/dev-local.ps1`. It keeps service
-ports bound to loopback and validates only the presence of required keys in
-the ignored `.env` and `backend-service/.env` files; it never prints values.
+The local-only Compose interface is `scripts/dev-local.ps1` (PowerShell) and
+its Bash port `scripts/dev-local.sh` (macOS/Linux). Both keep service
+ports bound to loopback and validate only the presence of required keys in
+the ignored `.env` and `backend-service/.env` files; they never print values.
 Install Docker Desktop/Compose, Python 3.11+, Node/npm, and Flutter, then copy
 the supplied environment templates and enter values owned for this project.
 
@@ -158,6 +159,15 @@ the supplied environment templates and enter values owned for this project.
 .\scripts\dev-local.ps1 stop
 ```
 
+```bash
+# Same commands on macOS/Linux:
+./scripts/dev-local.sh up-core
+./scripts/dev-local.sh up-full
+./scripts/dev-local.sh status
+./scripts/dev-local.sh test
+./scripts/dev-local.sh stop
+```
+
 `up-core` waits for Compose health and `http://127.0.0.1:8000/health`.
 `up-full` also waits for `http://127.0.0.1:8001/health` and needs an owned
 `GEMINI_API_KEY` in the ignored root `.env`. `test` starts only PostgreSQL and
@@ -170,6 +180,7 @@ ambiguous volume scopes or test contexts, and requires this full confirmation:
 
 ```powershell
 .\scripts\dev-local.ps1 reset-data -ConfirmResetData 'DELETE-LOCAL-DATA'
+# Bash equivalent: ./scripts/dev-local.sh reset-data DELETE-LOCAL-DATA
 ```
 
 Optional management tools are in Compose profile `tools` (pgAdmin, Mongo
@@ -197,11 +208,12 @@ cp .env.example .env # root-level env for compose
 cp backend-service/.env.example backend-service/.env
 cp ai-service/.env.example ai-service/.env
 
-# Windows / PowerShell: start the health-checked core stack
-.\scripts\dev-local.ps1 up-core
+# Start the health-checked core stack (PowerShell or Bash)
+.\scripts\dev-local.ps1 up-core        # Windows
+./scripts/dev-local.sh up-core         # macOS/Linux
 
 # Include the local AI profile when its owned local key is configured
-.\scripts\dev-local.ps1 up-full
+.\scripts\dev-local.ps1 up-full        # or: ./scripts/dev-local.sh up-full
 ```
 
 ### Option B — All services locally (no Docker)

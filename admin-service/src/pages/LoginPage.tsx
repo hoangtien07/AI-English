@@ -162,7 +162,7 @@ export const LoginPage = () => {
 
         <a
           className="login-topbar-link"
-          href="mailto:nhthang312@gmail.com"
+          href="mailto:privacy@hoangtien07.me"
           aria-label="Email"
           title="Contact"
         >
